@@ -1,4 +1,4 @@
 # Development-only tooling. Install with .venv/bin/python -m pip install -r requirements-dev.txt.
 pip-audit==2.10.1
-ruff==0.16.3
+ruff==0.17.4
 tblib==3.2.2
