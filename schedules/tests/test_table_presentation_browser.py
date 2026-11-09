@@ -170,7 +170,7 @@ async function rowForRecord(table, recordLabel) {
       <li class="data-table-tag">Faculty-equivalent</li>
       <li class="data-table-tag">Community Preceptor</li>
     </ul>
-    <table style="width: 22rem"><tbody><tr><td>
+    <table style="table-layout: fixed; border-collapse: separate; border-spacing: 0"><tbody><tr><td>
       <ul id="available-cell-tags" class="data-table-tags">
         <li class="data-table-tag">Faculty-equivalent</li>
         <li class="data-table-tag">Community Preceptor</li>
@@ -194,17 +194,66 @@ async function rowForRecord(table, recordLabel) {
     })
   );
   if (!labelsStayOnOneLine) throw new Error("The tag cell breaks an individual label on narrow screens.");
-  const availableCellTags = page.locator("#available-cell-tags > .data-table-tag");
-  const tagsFitAvailableCell = await availableCellTags.evaluateAll((items) => {
-    const cell = items[0].closest("td");
-    const gap = parseFloat(getComputedStyle(items[0].parentElement).columnGap);
-    return items.reduce((width, item) => width + item.getBoundingClientRect().width, gap) <= cell.clientWidth;
-  });
-  if (!tagsFitAvailableCell) throw new Error("The available-cell tag fixture is too narrow.");
-  const tagsStayOnOneRowWhenTheyFit = await availableCellTags.evaluateAll((items) =>
-    new Set(items.map((item) => item.getBoundingClientRect().top)).size === 1
-  );
-  if (!tagsStayOnOneRowWhenTheyFit) throw new Error("The tag cell does not use its available cell width.");
+  // Measure intrinsic labels, not their current row arrangement. Only the
+  // measurement clone is unconstrained; the tested list keeps production CSS.
+  // Fixed table layout prevents the labels from widening our constrained cell.
+  for (const alteredMetrics of [false, true]) {
+    await page.locator("#available-cell-tags").evaluate((list, alteredMetrics) => {
+      const cell = list.closest("td");
+      const table = cell.closest("table");
+      if (alteredMetrics) {
+        cell.style.paddingInline = "2rem";
+        cell.style.letterSpacing = "0.07em";
+      }
+      const probe = list.cloneNode(true);
+      probe.removeAttribute("id");
+      probe.style.cssText = "position: absolute; visibility: hidden; width: max-content; max-width: none";
+      cell.append(probe);
+      let widths;
+      try {
+        widths = [...probe.children].map((item) => item.getBoundingClientRect().width);
+      } finally {
+        probe.remove();
+      }
+      const gap = parseFloat(getComputedStyle(list).columnGap) || 0;
+      const required = widths.reduce((sum, width) => sum + width, gap);
+      const style = getComputedStyle(cell);
+      const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const borders = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+      const contentWidth = () => cell.getBoundingClientRect().width - padding - borders;
+      const tableOverhead = table.getBoundingClientRect().width - contentWidth();
+      // Headroom is deliberately much larger than subpixel layout rounding.
+      // Each label still fits alone in the constrained case.
+      const headroom = 32;
+      const deficit = Math.min(16, Math.min(...widths) / 4);
+      for (const fits of [true, false]) {
+        table.style.width = `${required + (fits ? headroom : -deficit) + tableOverhead}px`;
+        const available = contentWidth();
+        const detail = JSON.stringify({ alteredMetrics, fits, required, available, clientWidth: cell.clientWidth });
+        if (fits ? available < required + headroom / 2 :
+            available >= required - deficit / 2 || available <= Math.max(...widths)) {
+          throw new Error(`The tag fixture does not establish its content-width precondition: ${detail}`);
+        }
+        // Reproduce the old false premise with altered box/text metrics:
+        // clientWidth says "fits", although usable content width requires wrap.
+        if (alteredMetrics && !fits && cell.clientWidth <= required) {
+          throw new Error(`The tag fixture does not exercise the padding boundary: ${detail}`);
+        }
+        const items = [...list.children];
+        const rows = new Set(items.map((item) => item.getBoundingClientRect().top)).size;
+        if (fits ? rows !== 1 : rows !== 2) {
+          throw new Error(`The tag cell must ${fits ? "use its available cell width" : "wrap between labels"}: ${detail}`);
+        }
+        if (!items.every((item) => {
+          const label = document.createRange();
+          label.selectNodeContents(item);
+          return label.getClientRects().length === 1;
+        })) {
+          throw new Error(`The tag cell breaks an individual label: ${detail}`);
+        }
+      }
+    }, alteredMetrics);
+  }
   const tones = await page.locator("th[scope=row]").evaluateAll((cells) =>
     cells.map((cell) => getComputedStyle(cell).backgroundColor)
   );
