@@ -19,16 +19,27 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
   try {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 }, javaScriptEnabled: false,
+  });
   await context.addCookies([{
     name: input.sessionCookie.name,
     value: input.sessionCookie.value,
     url: input.baseUrl,
   }]);
   const page = await context.newPage();
+  let widerTextFixture = false;
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
-      return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
+      // Serve the fixture through the existing CSS seam, also with JS disabled.
+      // Wider text stresses metrics without installing or assuming a system font.
+      const fixture = widerTextFixture ? `
+        .workspace-work-summary .surface-header {
+          font-family: sans-serif;
+          letter-spacing: .07em;
+        }
+      ` : "";
+      return route.fulfill({ body: readFileSync(input.stylesheet, "utf8") + fixture, contentType: "text/css" });
     }
     return route.request().resourceType() === "document" ? route.continue() : route.abort();
   });
@@ -38,7 +49,8 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     ["/vacations/holidays/?calendar_year=2026", ".period-navigation", ".workspace-work-summary", "Vacation Holidays Work remaining"],
     ["/rounding/list/?month=2026-08", ".period-navigation", ".workspace-work-summary", "Rounding List Work remaining"],
   ]) {
-    const response = await page.goto(input.baseUrl + url, { waitUntil: "domcontentloaded" });
+    // Without application JS, DOMContentLoaded need not wait for the stylesheet.
+    const response = await page.goto(input.baseUrl + url, { waitUntil: "load" });
     if (!response || !response.ok()) {
       throw new Error(`${label}: page did not load successfully (${response ? response.status() : "no response"}).`);
     }
@@ -66,39 +78,94 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     }
   }
 
-  for (const width of [1280, 375]) {
+  for (const [width, widerText] of [[1280, false], [375, false], [375, true]]) {
+    widerTextFixture = widerText;
     await page.setViewportSize({ width, height: 900 });
     for (const [path, label] of [["/", "Calendar"], ["/list/", "List"]]) {
-      const response = await page.goto(input.baseUrl + `${path}?month=${input.preceptingMonth}`, { waitUntil: "domcontentloaded" });
+      const response = await page.goto(input.baseUrl + `${path}?month=${input.preceptingMonth}`, { waitUntil: "load" });
       if (!response || !response.ok()) {
         throw new Error(`Precepting ${label} ${width}px: page did not load successfully.`);
       }
-      const summary = page.locator(".workspace-work-summary p");
+      const scenario = `Precepting ${label} ${width}px${widerText ? " constrained wider text" : ""}`;
+      const surface = page.getByRole("region", { name: "Work remaining", exact: true });
+      const header = surface.locator("header");
+      const heading = header.getByRole("heading", { name: "Work remaining", exact: true });
+      const action = header.getByRole("link", { name: "Open in Schedule Bot", exact: true });
+      if (await heading.count() !== 1 || !await heading.isVisible() ||
+          await action.count() !== 1 || !await action.isVisible()) {
+        throw new Error(`${scenario}: missing visible Work remaining heading or Schedule Bot link in its header.`);
+      }
+      if (widerText) {
+        // Derive a narrow fixture from the rendered text: either item fits alone,
+        // but not both together. No viewport/font combination promises a row count.
+        await surface.evaluate((element) => {
+          const header = element.querySelector("header");
+          const style = getComputedStyle(header);
+          const widest = Math.max(...[...header.children].map(child => child.getBoundingClientRect().width));
+          const insets = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) +
+            parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+          const surfaceStyle = getComputedStyle(element);
+          element.style.maxWidth = `${Math.ceil(widest + insets + parseFloat(style.columnGap) +
+            parseFloat(surfaceStyle.borderLeftWidth) + parseFloat(surfaceStyle.borderRightWidth))}px`;
+        });
+      }
+      const summary = surface.locator("p");
       const text = await summary.innerText();
       if (!/required actions? remain:/.test(text)) {
-        throw new Error(`Precepting ${label} ${width}px: typed work summary was not rendered.`);
+        throw new Error(`${scenario}: typed work summary was not rendered.`);
       }
       const overflows = await summary.evaluate((element) => element.scrollWidth > element.clientWidth + 1);
       if (overflows) {
-        throw new Error(`Precepting ${label} ${width}px: typed work summary overflows its surface.`);
+        throw new Error(`${scenario}: typed work summary overflows its surface.`);
       }
-      const action = page.getByRole("link", { name: "Open in Schedule Bot" });
-      if (await action.count() !== 1) {
-        throw new Error(`Precepting ${label} ${width}px: missing Schedule Bot range action.`);
-      }
-      const alignment = await action.evaluate((element) => {
-        const heading = element.parentElement.querySelector("h2");
-        const header = element.parentElement.getBoundingClientRect();
-        const actionBox = element.getBoundingClientRect();
+      await header.scrollIntoViewIfNeeded();
+      const layout = await header.evaluate((element) => {
+        const heading = element.querySelector("h2");
+        const action = element.querySelector("a");
+        const header = element.getBoundingClientRect();
         const headingBox = heading.getBoundingClientRect();
+        const actionBox = action.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        const contentLeft = header.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+        const contentRight = header.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight);
+        const contained = box => box.width > 0 && box.height > 0 &&
+          box.left >= header.left && box.right <= header.right &&
+          box.top >= header.top && box.bottom <= header.bottom &&
+          box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight;
+        const readable = element => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          const box = element.getBoundingClientRect();
+          return [...range.getClientRects()].every(text => contained(text) &&
+            text.left >= box.left && text.right <= box.right &&
+            text.top >= box.top && text.bottom <= box.bottom) &&
+            // scroll/client dimensions are integer-rounded, unlike DOMRects.
+            element.scrollWidth <= element.clientWidth + 1 &&
+            element.scrollHeight <= element.clientHeight + 1;
+        };
         return {
-          overflows: actionBox.right > header.right + 1,
-          rightAligned: header.right - actionBox.right <= 15,
-          sharesHeadingRow: actionBox.bottom >= headingBox.top && actionBox.top <= headingBox.bottom,
+          header: header.toJSON(), heading: headingBox.toJSON(), action: actionBox.toJSON(),
+          contained: contained(headingBox) && contained(actionBox),
+          readable: readable(heading) && readable(action),
+          fits: headingBox.width + actionBox.width + parseFloat(style.columnGap) <= contentRight - contentLeft,
+          rightAligned: Math.abs(contentRight - actionBox.right) <= 0.1,
+          sameRow: actionBox.bottom > headingBox.top && actionBox.top < headingBox.bottom &&
+            headingBox.right <= actionBox.left,
+          wrapped: actionBox.top >= headingBox.bottom,
         };
       });
-      if (alignment.overflows || !alignment.rightAligned || !alignment.sharesHeadingRow) {
-        throw new Error(`Precepting ${label} ${width}px: Schedule Bot action is not aligned in the Work remaining header.`);
+      if (!layout.contained || !layout.readable || (!layout.sameRow && !layout.wrapped) ||
+          ((width === 1280 || layout.fits) && (!layout.sameRow || !layout.rightAligned))) {
+        throw new Error(`${scenario}: unreadable, overlapping, overflowing or misaligned header: ${JSON.stringify(layout)}`);
+      }
+      if (widerText && (layout.fits || !layout.wrapped)) {
+        throw new Error(`${scenario}: fixture did not exercise constrained wrapping: ${JSON.stringify(layout)}`);
+      }
+      // Native link semantics and hit testing must work without application JS.
+      await action.click({ trial: true });
+      await action.focus();
+      if (!await action.evaluate(element => document.activeElement === element && element.tabIndex >= 0)) {
+        throw new Error(`${scenario}: Schedule Bot link is not keyboard focusable.`);
       }
     }
   }
