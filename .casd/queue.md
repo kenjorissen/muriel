@@ -4,3 +4,5 @@
 - [Task 000003: Patched pypdf dependency](tasks/task-000003-patched-pypdf-dependency.md)
 - [Task 000004: Portable tag layout verification](tasks/task-000004-portable-tag-layout-verification.md)
 - [Task 000005: Responsive work summary verification](tasks/task-000005-responsive-work-summary-verification.md)
+- [Task 000006: GitHub Actions v7](tasks/task-000006-github-actions-v7.md)
+- [Task 000007: Ruff 0.17.4](tasks/task-000007-ruff-0174.md)
