@@ -41,7 +41,7 @@ _BROWSER_RUNNER = r"""
 const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { withBrowserPage } = require(process.env.PRECEPTOR_BROWSER_SESSION);
 const REQUEST_BOUNDARY_TIMEOUT_MS = 10_000;
 
 function waitForBoundary(promise, description) {
@@ -52,15 +52,9 @@ function waitForBoundary(promise, description) {
   return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }
 
-(async () => {
-  let browser;
-  let interceptedRequest;
-  try {
-    browser = await chromium.launch({
-    headless: true,
-    executablePath: input.browserExecutable,
-    });
-    const page = await browser.newPage();
+let interceptedRequest;
+let closing = false;
+withBrowserPage(input.browserExecutable, async ({ page }) => {
     await page.route("**/*", async (route) => {
     if (
       interceptedRequest &&
@@ -75,13 +69,13 @@ function waitForBoundary(promise, description) {
           (response) => response.url() === boundaryUrl && response.request().method() === interceptedRequest.method,
           { timeout: REQUEST_BOUNDARY_TIMEOUT_MS }
         );
-        await route.continue({ url: boundaryUrl });
-        const response = await responsePromise;
+        const [, response] = await Promise.all([
+          route.continue({ url: boundaryUrl }), responsePromise,
+        ]);
         interceptedRequest.responses.push(response.status());
         interceptedRequest.markCompleted();
       } catch (error) {
-        interceptedRequest.failCompletion(error);
-        throw error;
+        if (!closing) interceptedRequest.failCompletion(error);
       }
       return;
     }
@@ -179,6 +173,10 @@ function waitForBoundary(promise, description) {
         boundaryPath: action.boundaryPath,
         responses: [],
       };
+      // The response can fail before the release action starts awaiting it.
+      // Retain that rejection for release-request without an unhandled rejection
+      // aborting Node before the owning browser cleanup runs.
+      interceptedRequest.completed.catch(() => {});
       interceptedRequest.markObserved = observed;
       interceptedRequest.release = release;
       interceptedRequest.markCompleted = completed;
@@ -330,13 +328,12 @@ function waitForBoundary(promise, description) {
       await page.evaluate(() => window.dispatchEvent(new Event("pageshow")));
     }
     }
-  } finally {
-    interceptedRequest?.release();
-    await browser?.close();
-  }
-})().catch((error) => {
+}, { beforeClose: () => {
+  closing = true;
+  interceptedRequest?.release();
+} }).catch((error) => {
   console.error(error.stack || error);
-  process.exit(1);
+  process.exitCode = 1;
 });
 """
 
@@ -401,7 +398,7 @@ class PreceptingSolverWorkspaceBrowserTests(LiveServerTestCase):
 
     def browser(self, *actions, load_static=True):
         try:
-            completed = subprocess.run(
+            subprocess.run(
                 [self.node, "-e", _BROWSER_RUNNER],
                 input=json.dumps(
                     {
@@ -436,12 +433,10 @@ class PreceptingSolverWorkspaceBrowserTests(LiveServerTestCase):
                 ),
                 capture_output=True,
                 text=True,
-                timeout=30,
+                check=True,
             )
-        except subprocess.TimeoutExpired as error:
-            self.fail(f"Browser runner timed out after 30 seconds: {error.stderr or ''}")
-        if completed.returncode:
-            self.fail(completed.stderr)
+        except subprocess.CalledProcessError as error:
+            self.fail(error.stderr)
 
     def draft_state(self):
         return {

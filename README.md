@@ -317,17 +317,25 @@ libraries, `./scripts/setup-browser --browser-only` installs just the npm
 packages and browser without sudo; checks still launch Chromium and fail if
 any required library is missing. CI always uses the full setup.
 It installs its matching Chromium under
-`tools/browser/node_modules/playwright-core/.local-browsers`
+`<main-checkout>/.venv/browser/<manifest-digest>/node_modules/playwright-core/.local-browsers`
 (`PLAYWRIGHT_BROWSERS_PATH=0`), not a system Chrome or home-directory cache.
 No global Playwright CLI is used. This is development tooling only: there is
 no frontend build or production Node dependency.
 
-Normally install in the canonical checkout, alongside the shared `.venv`.
-Disposable Cassidy worktrees reuse that installation read-only when they have
-no local `tools/browser/node_modules/playwright`. The resolver checks the
-installed version against the **current worktree's** pin. For a changed pin or
-isolated setup, run `./scripts/setup-browser` in the disposable worktree itself;
-its local installation takes precedence without modifying the canonical one.
+Setup from **any** checkout provisions the same ignored, non-source development
+installation beneath the canonical checkout's `.venv/browser/`. Git's common
+directory identifies that checkout; a SHA-256 digest of the **invoking worktree's**
+package manifest and lockfile selects the installation. The resolver also checks
+the installed version against that worktree's pin. No worktree-local or global
+Node modules are consulted. A changed pin/lockfile gets its own installation,
+without replacing tooling used by other revisions.
+
+For Cassidy, run setup from the implementation worktree before completion and
+leave this shared tooling in place: subsequent sibling Check and Review worktrees
+resolve it offline without needing setup or access to another Attempt's paths.
+These are retained development dependencies, like the shared Python virtualenv,
+not invocation-owned scratch. Setup copies only the two dependency manifests
+into the ignored installation and does not edit canonical tracked source.
 Do not run setup concurrently with checks using that same installation.
 Re-run setup after changing the pin/lockfile. Both setup and checks deliberately
 use hermetic browser storage even if the shell has another browser-cache setting.
@@ -349,7 +357,14 @@ prerequisites fail with setup instructions. Browser tests also require this
 installation when run as focused Django tests: unavailable tooling is an error,
 not a skip. Checks never install or download dependencies. Existing embedded
 Node runners retain Django orchestration and close browsers in `finally` blocks,
-including assertion failures.
+including assertion failures. The solver workspace and form-intro runners use
+`schedules/tests/browser_session.cjs` rather than Python timeouts that kill only
+Node: Playwright launch/page setup each have a 30-second budget, actions and
+navigation have 30-second deadlines, and a scenario has 90 seconds after page
+setup. On failure, pending intercepted requests are released, context cleanup
+gets five seconds, and browser close is always awaited (including Playwright's
+owned process/profile cleanup). Python does not race that cleanup with an outer
+watchdog. The original action/scenario error is retained if cleanup also fails.
 
 The check excludes the deterministic, representative reset-tool and multi-year
 synthetic-scenario integration cases; run them when changing those owners:

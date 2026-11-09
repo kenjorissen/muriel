@@ -11,7 +11,12 @@ if [ "$#" -gt 1 ]; then
     exit 2
 fi
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
-cd "$script_dir/../tools/browser"
+installation=$(node "$script_dir/browser-tooling.cjs" --installation-directory)
+printf 'Installing shared browser tooling in %s\n' "$installation"
+mkdir -p "$installation"
+cp "$script_dir/../tools/browser/package.json" "$script_dir/../tools/browser/package-lock.json" "$installation/"
+cd "$installation"
 npm ci --include=dev
-# Hermetic browser storage travels with this installation, not the user's home.
+# Hermetic browser storage belongs to the shared installation, not this Attempt.
 PLAYWRIGHT_BROWSERS_PATH=0 node node_modules/playwright/cli.js install $with_deps chromium
+node "$script_dir/browser-tooling.cjs"

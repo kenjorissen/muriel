@@ -18,18 +18,14 @@ const { readFileSync } = require("fs");
 const path = require("path");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { withBrowserPage } = require(process.env.PRECEPTOR_BROWSER_SESSION);
 
-(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
-  try {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+withBrowserPage(input.browserExecutable, async ({ context, page }) => {
   await context.addCookies([{
     name: input.sessionCookie.name,
     value: input.sessionCookie.value,
     url: input.baseUrl,
   }]);
-  const page = await context.newPage();
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
@@ -120,12 +116,9 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     }
   }
 
-  } finally {
-    await browser.close();
-  }
-})().catch((error) => {
+}, { contextOptions: { viewport: { width: 1280, height: 900 } } }).catch((error) => {
   console.error(error.stack || error);
-  process.exit(1);
+  process.exitCode = 1;
 });
 """
 
@@ -133,18 +126,14 @@ _INTERVIEW_BROWSER_RUNNER = r"""
 const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { withBrowserPage } = require(process.env.PRECEPTOR_BROWSER_SESSION);
 
-(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
-  try {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+withBrowserPage(input.browserExecutable, async ({ context, page }) => {
   await context.addCookies([{
     name: input.sessionCookie.name,
     value: input.sessionCookie.value,
     url: input.baseUrl,
   }]);
-  const page = await context.newPage();
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
@@ -186,12 +175,9 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
       page.locator("form.interview-form").getByRole("button", { name: "Schedule Interview", exact: true }).click(),
     ]);
   }
-  } finally {
-    await browser.close();
-  }
-})().catch((error) => {
+}, { contextOptions: { viewport: { width: 1280, height: 900 } } }).catch((error) => {
   console.error(error.stack || error);
-  process.exit(1);
+  process.exitCode = 1;
 });
 """
 
@@ -199,19 +185,15 @@ _PAGE_INTRO_BROWSER_RUNNER = r"""
 const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { withBrowserPage } = require(process.env.PRECEPTOR_BROWSER_SESSION);
 
-(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
-  try {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+withBrowserPage(input.browserExecutable, async ({ context, page }) => {
   await context.addCookies([{
     name: input.sessionCookie.name,
     value: input.sessionCookie.value,
     url: input.baseUrl,
   }]);
-  const page = await context.newPage();
-  page.route("**/*", (route) => {
+  await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
@@ -263,12 +245,9 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     }
   }
 
-  } finally {
-    await browser.close();
-  }
-})().catch((error) => {
+}, { contextOptions: { viewport: { width: 1280, height: 900 } } }).catch((error) => {
   console.error(error.stack || error);
-  process.exit(1);
+  process.exitCode = 1;
 });
 """
 
@@ -319,7 +298,6 @@ class FormPageIntroBrowserTests(LiveServerTestCase):
             ),
             capture_output=True,
             text=True,
-            timeout=90,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         for day, width in [(1, 1280), (2, 375)]:
