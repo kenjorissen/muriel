@@ -1,0 +1,17 @@
+#!/bin/sh
+# Explicit network-enabled setup; never called by scripts/check.
+set -eu
+case "${1:-}" in
+    "") with_deps=--with-deps ;;
+    --browser-only) with_deps= ;;
+    *) printf '%s\n' 'Usage: scripts/setup-browser [--browser-only]' >&2; exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then
+    printf '%s\n' 'Usage: scripts/setup-browser [--browser-only]' >&2
+    exit 2
+fi
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+cd "$script_dir/../tools/browser"
+npm ci --include=dev
+# Hermetic browser storage travels with this installation, not the user's home.
+PLAYWRIGHT_BROWSERS_PATH=0 node node_modules/playwright/cli.js install $with_deps chromium

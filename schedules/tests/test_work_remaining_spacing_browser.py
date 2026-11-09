@@ -1,8 +1,6 @@
 import json
-import shutil
 import subprocess
 from pathlib import Path
-from unittest import SkipTest
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -10,18 +8,17 @@ from django.test import LiveServerTestCase
 
 from schedules.services.lead_times import ensure_lead_time_defaults
 from schedules.services.operational_attention import organization_today
+from schedules.tests.browser_tools import require_browser_tools
 
 _BROWSER_RUNNER = r"""
-const { execFileSync } = require("child_process");
 const { readFileSync } = require("fs");
-const path = require("path");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules/playwright"));
+const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
+  try {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.addCookies([{
     name: input.sessionCookie.name,
@@ -106,7 +103,9 @@ const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules
     }
   }
 
-  await browser.close();
+  } finally {
+    await browser.close();
+  }
 })().catch((error) => {
   console.error(error.stack || error);
   process.exit(1);
@@ -119,24 +118,8 @@ class WorkRemainingSpacingBrowserTests(LiveServerTestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls.node, cls.browser_executable = require_browser_tools()
         super().setUpClass()
-        cls.node = shutil.which("node")
-        cls.browser_executable = shutil.which("google-chrome")
-        if not cls.node or not cls.browser_executable:
-            raise SkipTest("Playwright browser coverage requires Node and Google Chrome.")
-        available = subprocess.run(
-            [
-                cls.node,
-                "-e",
-                "const p=require('path'),e=require('child_process').execFileSync;"
-                "require(p.join(e('npm',['root','-g'],{encoding:'utf8'}).trim(),"
-                "'@playwright/cli/node_modules/playwright'));",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if available.returncode:
-            raise SkipTest("Playwright is not available for browser coverage.")
 
     def setUp(self):
         ensure_lead_time_defaults()

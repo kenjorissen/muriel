@@ -30,6 +30,11 @@ if [ ! -x "$ruff" ]; then
 fi
 
 cd "$repo_root"
+if ! command -v node >/dev/null 2>&1; then
+    printf '%s\n' 'Browser checks require Node 22+; then run ./scripts/setup-browser.' >&2
+    exit 1
+fi
+node scripts/browser-tooling.cjs
 "$ruff" check .
 "$ruff" format --check .
 node --test schedules/tests/period_picker.test.js schedules/tests/physicians_picker.test.js schedules/tests/role_attributes.test.js schedules/tests/schedule_report_controls.test.js schedules/tests/faculty_admin_time_report_controls.test.js schedules/tests/precepting_solve_controls.test.js schedules/tests/vacation_calendar.test.js schedules/tests/calendar_week_actions.test.js schedules/tests/academic_event_form.test.js schedules/tests/capacity_override_control.test.js schedules/tests/form_processing_feedback.test.js schedules/tests/monthly_annual_window.test.js

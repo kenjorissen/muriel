@@ -1,10 +1,8 @@
 import json
-import shutil
 import subprocess
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from unittest import SkipTest
 from unittest.mock import patch
 from urllib.parse import urlencode
 
@@ -51,6 +49,7 @@ from schedules.services.schedule_reports import (
     schedule_report_parameters,
     vacation_schedule_report,
 )
+from schedules.tests.browser_tools import require_browser_tools
 from schedules.tests.test_precepting_calendar_pdf import (
     _grid_cell_at,
     _pdf_artifact,
@@ -1601,13 +1600,10 @@ class ScheduleReportPresentationTests(TestCase):
 
 
 _SCHEDULE_REPORT_BROWSER_RUNNER = r"""
-const { execFileSync } = require("child_process");
 const { readFileSync } = require("fs");
-const path = require("path");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules/playwright"));
+const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 
 function describesUnavailableRange(text, unavailable, temporalReason) {
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -1639,6 +1635,7 @@ async function assertUnavailableCoverage(page, url, unavailable, selected, tempo
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
+  try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
@@ -1794,7 +1791,9 @@ async function assertUnavailableCoverage(page, url, unavailable, selected, tempo
 
   await assertUnavailableCoverage(page, input.historyOnlyUrl, "scheduled", "history", /(?:ends?|is entirely)\s+.*(?:before|prior to)\s+today/i);
   await assertUnavailableCoverage(page, input.scheduledOnlyUrl, "history", "scheduled", /(?:begins?|starts?|is entirely)\s+.*(?:today|later|on or after)/i);
-  await browser.close();
+  } finally {
+    await browser.close();
+  }
 })().catch((error) => {
   console.error(error.stack || error);
   process.exit(1);
@@ -1807,24 +1806,8 @@ class ScheduleReportPresentationBrowserTests(LiveServerTestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls.node, cls.browser_executable = require_browser_tools()
         super().setUpClass()
-        cls.node = shutil.which("node")
-        cls.browser_executable = shutil.which("google-chrome")
-        if not cls.node or not cls.browser_executable:
-            raise SkipTest("Playwright browser coverage requires Node and Google Chrome.")
-        available = subprocess.run(
-            [
-                cls.node,
-                "-e",
-                "const p=require('path'),e=require('child_process').execFileSync;"
-                "require(p.join(e('npm',['root','-g'],{encoding:'utf8'}).trim(),"
-                "'@playwright/cli/node_modules/playwright'));",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if available.returncode:
-            raise SkipTest("Playwright is not available for browser coverage.")
 
     def setUp(self):
         self.scheduler = get_user_model().objects.create_user(

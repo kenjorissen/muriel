@@ -49,6 +49,9 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Install declared browser tooling and Chromium prerequisites
+        run: ./scripts/setup-browser
+
       - name: Run quality checks
         run: ./scripts/quality-check
 

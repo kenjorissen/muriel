@@ -1,24 +1,21 @@
 import json
-import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
-from unittest import SkipTest
 
 from django.template.loader import render_to_string
 from django.test import SimpleTestCase
 
+from schedules.tests.browser_tools import require_browser_tools
 from schedules.tests.test_work_remaining import _RenderedSurfaceParser
 
 _BROWSER_RUNNER = r"""
-const { execFileSync } = require("child_process");
 const { readFileSync } = require("fs");
-const path = require("path");
 const input = JSON.parse(readFileSync(0, "utf8"));
-const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules/playwright"));
+const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
+  try {
   const page = await browser.newPage();
   await page.route("**/*", (route) => route.abort());
   for (const width of [1280, 375]) {
@@ -50,7 +47,9 @@ const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules
       }
     }
   }
-  await browser.close();
+  } finally {
+    await browser.close();
+  }
 })().catch((error) => { console.error(error.stack || error); process.exit(1); });
 """
 
@@ -89,9 +88,7 @@ class PageTitleTypographyTests(SimpleTestCase):
                         self.assertIn(term, title)
 
     def test_rendered_title_and_section_typography_at_desktop_and_phone_widths(self):
-        node, browser = shutil.which("node"), shutil.which("google-chrome")
-        if not node or not browser:
-            raise SkipTest("Playwright browser coverage requires Node and Google Chrome.")
+        node, browser = require_browser_tools()
         completed = subprocess.run(
             [node, "-e", _BROWSER_RUNNER],
             input=json.dumps(

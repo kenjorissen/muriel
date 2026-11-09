@@ -1,9 +1,7 @@
 import json
-import shutil
 import subprocess
 from datetime import date, timedelta
 from pathlib import Path
-from unittest import SkipTest
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -19,18 +17,17 @@ from schedules.services.work_remaining import (
     ProjectedWorkItem,
     ProjectedWorkReason,
 )
+from schedules.tests.browser_tools import require_browser_tools
 
 _BROWSER_RUNNER = r"""
-const { execFileSync } = require("child_process");
 const { readFileSync } = require("fs");
-const path = require("path");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules/playwright"));
+const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
+  try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
@@ -151,7 +148,9 @@ const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules
     if (layout.clippedCells) throw new Error("Work Remaining clips wrapped content at " + width + "px.");
     if (!layout.workRemainingHasSurplus) throw new Error("Work Remaining does not reserve flexible surplus for Work remaining at " + width + "px.");
   }
-  await browser.close();
+  } finally {
+    await browser.close();
+  }
 })().catch((error) => {
   console.error(error.stack || error);
   process.exit(1);
@@ -164,24 +163,8 @@ class WorkRemainingBrowserTests(LiveServerTestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls.node, cls.browser_executable = require_browser_tools()
         super().setUpClass()
-        cls.node = shutil.which("node")
-        cls.browser_executable = shutil.which("google-chrome")
-        if not cls.node or not cls.browser_executable:
-            raise SkipTest("Playwright browser coverage requires Node and Google Chrome.")
-        available = subprocess.run(
-            [
-                cls.node,
-                "-e",
-                "const p=require('path'),e=require('child_process').execFileSync;"
-                "require(p.join(e('npm',['root','-g'],{encoding:'utf8'}).trim(),"
-                "'@playwright/cli/node_modules/playwright'));",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if available.returncode:
-            raise SkipTest("Playwright is not available for browser coverage.")
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(

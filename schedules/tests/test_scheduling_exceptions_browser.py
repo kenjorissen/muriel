@@ -1,9 +1,7 @@
 import json
-import shutil
 import subprocess
 from datetime import date
 from pathlib import Path
-from unittest import SkipTest
 from unittest.mock import patch
 
 from django.conf import settings
@@ -13,20 +11,19 @@ from django.urls import reverse
 
 from schedules.models import EffectiveRole, Physician, PreceptorSession
 from schedules.services.preceptors import open_monthly_draft
+from schedules.tests.browser_tools import require_browser_tools
 
 _FIXTURE_TODAY = date(2026, 9, 8)
 
 _BROWSER_RUNNER = r"""
-const { execFileSync } = require("child_process");
 const { readFileSync } = require("fs");
-const path = require("path");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules/playwright"));
+const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
+  try {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.addCookies([{ name: input.sessionCookie.name, value: input.sessionCookie.value, url: input.baseUrl }]);
   const page = await context.newPage();
@@ -98,7 +95,9 @@ const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules
   if ((await retainedAcknowledgement.count()) !== 1 || !(await retainedAcknowledgement.textContent()).includes("No longer applies.") || (await retainedAcknowledgement.textContent()).includes("fingerprint") || (await retainedAcknowledgement.textContent()).includes("stale")) {
     throw new Error("The retained exception history did not show its current status safely.");
   }
-  await browser.close();
+  } finally {
+    await browser.close();
+  }
 })().catch((error) => { console.error(error.stack || error); process.exit(1); });
 """
 
@@ -129,24 +128,8 @@ class SchedulingExceptionsBrowserTests(LiveServerTestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls.node, cls.browser_executable = require_browser_tools()
         super().setUpClass()
-        cls.node = shutil.which("node")
-        cls.browser_executable = shutil.which("google-chrome")
-        if not cls.node or not cls.browser_executable:
-            raise SkipTest("Playwright browser coverage requires Node and Google Chrome.")
-        available = subprocess.run(
-            [
-                cls.node,
-                "-e",
-                "const p=require('path'),e=require('child_process').execFileSync;"
-                "require(p.join(e('npm',['root','-g'],{encoding:'utf8'}).trim(),"
-                "'@playwright/cli/node_modules/playwright'));",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if available.returncode:
-            raise SkipTest("Playwright is not available for browser coverage.")
 
     def test_scheduler_acknowledges_then_reviews_a_retained_exception(self):
         scheduler = get_user_model().objects.create_user(username="exception-browser-scheduler")

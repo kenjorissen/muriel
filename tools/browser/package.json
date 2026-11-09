@@ -1,0 +1,9 @@
+{
+  "name": "muriel-browser-checks",
+  "private": true,
+  "description": "Development-only browser library for Django-driven checks",
+  "engines": { "node": ">=22" },
+  "devDependencies": {
+    "playwright": "1.65.0"
+  }
+}

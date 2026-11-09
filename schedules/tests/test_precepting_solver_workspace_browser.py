@@ -1,10 +1,8 @@
 import json
-import shutil
 import subprocess
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import SkipTest
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -37,15 +35,13 @@ from schedules.services.precepting_solver import edit_proposed_assignment, revie
 from schedules.services.preceptors import assign_preceptor, open_weekly_draft
 from schedules.services.rounding import record_normal_rounder
 from schedules.services.vacations import create_vacation
+from schedules.tests.browser_tools import require_browser_tools
 
 _BROWSER_RUNNER = r"""
-const { execFileSync } = require("child_process");
 const { readFileSync } = require("fs");
-const path = require("path");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules/playwright"));
+const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 const REQUEST_BOUNDARY_TIMEOUT_MS = 10_000;
 
 function waitForBoundary(promise, description) {
@@ -380,24 +376,8 @@ class PreceptingSolverWorkspaceBrowserTests(LiveServerTestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls.node, cls.browser_executable = require_browser_tools()
         super().setUpClass()
-        cls.node = shutil.which("node")
-        cls.browser_executable = shutil.which("google-chrome")
-        if not cls.node or not cls.browser_executable:
-            raise SkipTest("Playwright browser coverage requires Node and Google Chrome.")
-        available = subprocess.run(
-            [
-                cls.node,
-                "-e",
-                "const p=require('path'),e=require('child_process').execFileSync;"
-                "require(p.join(e('npm',['root','-g'],{encoding:'utf8'}).trim(),"
-                "'@playwright/cli/node_modules/playwright'));",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if available.returncode:
-            raise SkipTest("Playwright is not available for browser coverage.")
 
     def setUp(self):
         workbook_submissions.clear()

@@ -303,6 +303,35 @@ invitations may be resent or revoked; resending invalidates earlier links.
 
 ## Checks and formatting
 
+Install the browser test tooling once, using Node 22+ and npm:
+
+```sh
+./scripts/setup-browser
+```
+
+This explicit, network-enabled setup uses `npm ci` with the pinned Playwright
+library and lockfile in `tools/browser/`, then Playwright's supported
+`install --with-deps chromium` command. On Linux, installing OS prerequisites
+may request sudo. If an administrator has already provisioned those OS
+libraries, `./scripts/setup-browser --browser-only` installs just the npm
+packages and browser without sudo; checks still launch Chromium and fail if
+any required library is missing. CI always uses the full setup.
+It installs its matching Chromium under
+`tools/browser/node_modules/playwright-core/.local-browsers`
+(`PLAYWRIGHT_BROWSERS_PATH=0`), not a system Chrome or home-directory cache.
+No global Playwright CLI is used. This is development tooling only: there is
+no frontend build or production Node dependency.
+
+Normally install in the canonical checkout, alongside the shared `.venv`.
+Disposable Cassidy worktrees reuse that installation read-only when they have
+no local `tools/browser/node_modules/playwright`. The resolver checks the
+installed version against the **current worktree's** pin. For a changed pin or
+isolated setup, run `./scripts/setup-browser` in the disposable worktree itself;
+its local installation takes precedence without modifying the canonical one.
+Do not run setup concurrently with checks using that same installation.
+Re-run setup after changing the pin/lockfile. Both setup and checks deliberately
+use hermetic browser storage even if the shell has another browser-cache setting.
+
 Run the deterministic project check:
 
 ```sh
@@ -314,7 +343,13 @@ Django test suite with `preceptor_project.test_settings`. The pinned development
 dependency `tblib` enables Django to report ordinary parallel-test failures with
 the failing test and traceback instead of a traceback-pickling error; install
 `requirements-dev.txt` before running checks, including in the shared main-worktree
-virtualenv used by Cassidy worktrees.
+virtualenv used by Cassidy worktrees. `scripts/check` first launches the declared
+Chromium offline to verify its module, browser, and OS prerequisites; missing
+prerequisites fail with setup instructions. Browser tests also require this
+installation when run as focused Django tests: unavailable tooling is an error,
+not a skip. Checks never install or download dependencies. Existing embedded
+Node runners retain Django orchestration and close browsers in `finally` blocks,
+including assertion failures.
 
 The check excludes the deterministic, representative reset-tool and multi-year
 synthetic-scenario integration cases; run them when changing those owners:
@@ -332,13 +367,22 @@ DJANGO_SETTINGS_MODULE=preceptor_project.test_settings \
   .venv/bin/python manage.py test schedules.tests.test_views
 ```
 
+For example, replace the label with
+`schedules.tests.test_page_title_typography` for a focused real-browser check.
+In a disposable worktree, use `/path/to/main/.venv/bin/python` with that
+worktree's `manage.py`; module and browser resolution do not depend on the
+current working directory or a global npm installation.
+
 Apply Ruff fixes and formatting with `scripts/format`; use the non-mutating
 `scripts/quality-check` for Ruff, Django system, and migration-drift checks.
 
 ## Dependency updates and security monitoring
 
 GitHub Actions runs the clean-environment checks for pull requests, pushes to
-`main`, and manual dispatch. Its separate **Dependency security** check runs
+`main`, and manual dispatch. The complete-check job explicitly runs
+`scripts/setup-browser` before `scripts/check`, so a clean runner installs the
+pinned library, matching Chromium and OS prerequisites rather than depending
+on preinstalled Chrome. Its separate **Dependency security** check runs
 the pinned `pip-audit` tool against the application dependencies declared in
 `requirements.txt`; it resolves and audits their dependency closure and fails
 when a known vulnerability is found. It does not audit whichever packages

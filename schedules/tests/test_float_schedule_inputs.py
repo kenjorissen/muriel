@@ -1,9 +1,7 @@
 import json
-import shutil
 import socket
 import subprocess
 from datetime import UTC, date, datetime, timedelta
-from unittest import SkipTest
 from unittest.mock import patch
 
 from django.conf import settings
@@ -38,6 +36,7 @@ from schedules.services.physicians import (
     create_faculty_availability_template,
     create_monthly_physician_availability_rule,
 )
+from schedules.tests.browser_tools import require_browser_tools
 
 
 def _selection_choices(field):
@@ -61,16 +60,14 @@ def _choice_label(field, value):
 
 
 _BROWSER_RUNNER = r"""
-const { execFileSync } = require("child_process");
 const { readFileSync } = require("fs");
-const path = require("path");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
-const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules/playwright"));
+const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
+  try {
   const context = await browser.newContext();
   await context.addCookies([{ name: input.sessionCookie.name, value: input.sessionCookie.value, url: input.baseUrl }]);
   const page = await context.newPage();
@@ -102,7 +99,9 @@ const { chromium } = require(path.join(globalRoot, "@playwright/cli/node_modules
       if (defaultValue !== "base:off") throw new Error(`Unexpected weekly-template default: ${defaultValue}`);
     }
   }
-  await browser.close();
+  } finally {
+    await browser.close();
+  }
 })().catch((error) => {
   console.error(error.stack || error);
   process.exit(1);
@@ -805,30 +804,14 @@ class FloatScheduleInputBrowserTests(LiveServerTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.node = shutil.which("node")
-        cls.browser_executable = shutil.which("google-chrome")
-        if not cls.node or not cls.browser_executable:
-            raise SkipTest("Playwright browser coverage requires Node and Google Chrome.")
+        cls.node, cls.browser_executable = require_browser_tools()
         try:
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
         except PermissionError:
-            raise SkipTest(
+            raise RuntimeError(
                 "Playwright browser coverage requires local test-server access."
             ) from None
-        available = subprocess.run(
-            [
-                cls.node,
-                "-e",
-                "const p=require('path'),e=require('child_process').execFileSync;"
-                "require(p.join(e('npm',['root','-g'],{encoding:'utf8'}).trim(),"
-                "'@playwright/cli/node_modules/playwright'));",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if available.returncode:
-            raise SkipTest("Playwright is not available for browser coverage.")
         super().setUpClass()
 
     def setUp(self):
