@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+python="$repo_root/.venv/bin/python"
+
+if [ ! -x "$python" ]; then
+    printf '%s\n' "Missing release virtual environment at $repo_root/.venv." >&2
+    exit 1
+fi
+
+cd "$repo_root"
+exec "$python" -m schedules.staging_performance_probe "$@"

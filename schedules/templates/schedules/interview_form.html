@@ -1,0 +1,12 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ title }} | Interviews{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a class="form-return-link" href="{{ interview_return_url }}">Return to Interviews</a><h1 class="form-page-title">{{ title }}</h1></header>
+  <form method="post" action="{{ form_action }}" class="interview-form form-layout form-presentation">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="interview-schedule-heading"><header class="surface-header"><h2 id="interview-schedule-heading">Interview shift</h2></header><div class="surface-body form-content-stack"><div class="interview-form-context"><div class="form-field-group form-read-only-value"><span class="form-field-label">Academic year</span><span>{{ academic_year }}-{{ academic_year|add:1 }}</span></div><div class="form-field-group form-read-only-value"><span class="form-field-label">Coverage</span><span>AM</span></div></div><div class="form-field-grid interview-form-grid">{% include "schedules/_form_field.html" with field=form.date %}{% include "schedules/_form_field.html" with field=form.physician helper=form.physician.help_text %}</div></div></section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="interview-notes-heading"><header class="surface-header"><h2 id="interview-notes-heading">Actions</h2></header><div class="surface-body form-content-stack">{% include "schedules/_form_field.html" with field=form.note field_classes="form-field-group--full" %}<div class="form-action-area"><button type="submit">{{ submit_label }}</button><a href="{{ interview_return_url }}">Return to Interviews</a></div></div></section>
+  </form>
+  {% if shift %}<section class="surface-frame surface-frame--raised surface-frame--removal surface-tone--danger" aria-labelledby="interview-removal-heading"><header class="surface-header"><h2 id="interview-removal-heading">Remove Interview</h2><p>This deactivates the shift and retains its date, assignment, and history.</p></header><div class="surface-body"><form method="post" action="{{ remove_action }}" class="form-content-stack">{% csrf_token %}<div class="form-action-area"><button class="form-action--destructive" type="submit">Remove Interview</button></div></form></div></section>{% endif %}
+{% endblock %}

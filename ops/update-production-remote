@@ -1,0 +1,235 @@
+#!/bin/sh
+# Run the privileged production update from the exact deployment archive.
+set -eu
+
+[ "$#" -eq 6 ] || {
+    printf '%s\n' 'update-production: expected commit, archive, primary host and origin, secondary host and origin.' >&2
+    exit 2
+}
+helper=$0
+commit=$1
+artifact=$2
+PRECEPTOR_PRODUCTION_ALLOWED_HOST=$3
+PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN=$4
+PRECEPTOR_PRODUCTION_SECONDARY_ALLOWED_HOST=$5
+PRECEPTOR_PRODUCTION_SECONDARY_CSRF_TRUSTED_ORIGIN=$6
+case "$commit" in
+    *[!0123456789abcdef]*|???????????????????????????????????????)
+        printf '%s\n' "update-production: invalid deployment commit." >&2
+        exit 1
+        ;;
+esac
+case "$helper" in
+    "/tmp/muriel-${commit}."[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]].sh) ;;
+    *)
+        printf '%s\n' "update-production: unsafe deployment helper path." >&2
+        exit 1
+        ;;
+esac
+case "$artifact" in
+    "/tmp/muriel-${commit}."[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]].tar) ;;
+    *)
+        printf '%s\n' "update-production: unsafe deployment archive path." >&2
+        exit 1
+        ;;
+esac
+[ -f "$helper" ] && [ ! -L "$helper" ] || {
+    printf '%s\n' "update-production: staged deployment helper is missing or unsafe." >&2
+    exit 1
+}
+[ -f "$artifact" ] && [ ! -L "$artifact" ] || {
+    printf '%s\n' "update-production: staged deployment archive is missing or unsafe." >&2
+    exit 1
+}
+tar -xOf "$artifact" ops/update-production-remote | cmp -s - "$helper" || {
+    printf '%s\n' "update-production: staged deployment helper does not match its archive." >&2
+    exit 1
+}
+
+staging=$(mktemp -d "/tmp/muriel-update-${commit}.XXXXXX")
+cleanup() {
+    status=$?
+    trap - EXIT HUP INT TERM
+    rm -rf -- "$staging"
+    rm -f -- "$artifact" "$helper"
+    exit "$status"
+}
+trap cleanup EXIT HUP INT TERM
+
+tar --extract --file "$artifact" --directory "$staging" --no-same-owner
+[ -x "$staging/ops/bootstrap-ubuntu" ] || {
+    printf '%s\n' "update-production: staged bootstrap is missing or not executable." >&2
+    exit 1
+}
+
+# The standalone /tmp helper has no repository siblings or release dependency.
+# Validate using only the guard from its verified exact archive.
+. "$staging/ops/require-production-identity.sh"
+bootstrap() {
+    PRECEPTOR_PRODUCTION_ALLOWED_HOST=$primary_host \
+    PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN=$primary_origin \
+    PRECEPTOR_PRODUCTION_SECONDARY_ALLOWED_HOST=$secondary_host \
+    PRECEPTOR_PRODUCTION_SECONDARY_CSRF_TRUSTED_ORIGIN=$secondary_origin \
+        "$staging/ops/bootstrap-ubuntu" "$@"
+}
+
+if bootstrap --check; then
+    printf '%s\n' "update-production: host bootstrap is already converged."
+else
+    printf '%s\n' "update-production: bootstrap check reported divergence; applying its fixed Muriel scope." >&2
+    bootstrap --apply || {
+        printf '%s\n' "update-production: bootstrap apply failed. Diagnose with: ops/bootstrap-ubuntu --check" >&2
+        exit 1
+    }
+    bootstrap --check || {
+        printf '%s\n' "update-production: bootstrap did not converge. Diagnose with: ops/bootstrap-ubuntu --check" >&2
+        exit 1
+    }
+fi
+
+/srv/muriel/deploy-release "$commit" < "$artifact" || {
+    printf '%s\n' "update-production: deploy-release failed. Diagnose with: sudo /srv/muriel/deploy-release $commit" >&2
+    exit 1
+}
+
+nginx -t || {
+    printf '%s\n' "update-production: Nginx configuration is invalid. Diagnose with: sudo nginx -t" >&2
+    exit 1
+}
+systemctl reload nginx || {
+    printf '%s\n' "update-production: Nginx reload failed. Diagnose with: sudo systemctl status nginx" >&2
+    exit 1
+}
+systemctl enable --now muriel-backup.timer || {
+    printf '%s\n' "update-production: backup timer failed to start. Diagnose with: sudo systemctl status muriel-backup.timer" >&2
+    exit 1
+}
+systemctl is-enabled --quiet muriel nginx muriel-backup.timer && \
+    systemctl is-active --quiet muriel nginx postgresql@18-main muriel-backup.timer || {
+    printf '%s\n' "update-production: required services are not enabled and active. Diagnose with: sudo systemctl status muriel nginx postgresql@18-main muriel-backup.timer" >&2
+    exit 1
+}
+
+# Both consumers load the protected configuration as muriel, never as root.
+run_with_production_environment() {
+    environment_file=/etc/muriel/environment
+    [ -f "$environment_file" ] && [ ! -L "$environment_file" ] && \
+        [ -r "$environment_file" ] || {
+        printf '%s\n' "update-production: production environment file is missing, unreadable, or unsafe." >&2
+        return 1
+    }
+    [ "$(stat -c '%U:%G:%a' "$environment_file")" = root:muriel:640 ] || {
+        printf '%s\n' "update-production: production environment file must be root:muriel mode 0640." >&2
+        return 1
+    }
+    runuser -u muriel -- sh -eu -c '
+    [ -r /etc/muriel/environment ] || {
+        printf "%s\n" "update-production: production environment file is unreadable by muriel." >&2
+        exit 1
+    }
+    unset PRECEPTOR_PRODUCTION_ALLOWED_HOST PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN
+    unset PRECEPTOR_PRODUCTION_SECONDARY_ALLOWED_HOST PRECEPTOR_PRODUCTION_SECONDARY_CSRF_TRUSTED_ORIGIN
+    set -a
+    . /etc/muriel/environment
+    set +a
+    exec "$@"
+' sh "$@"
+}
+run_with_production_environment /srv/muriel/current/.venv/bin/python /srv/muriel/current/ops/check-public-edge || {
+    printf '%s\n' "update-production: local public-edge probe failed. Diagnose with: sudo -u muriel sh -eu -c 'set -a; . /etc/muriel/environment; set +a; exec /srv/muriel/current/.venv/bin/python /srv/muriel/current/ops/check-public-edge'" >&2
+    exit 1
+}
+
+tailscale_status=$staging/tailscale-serve-status.json
+tailscale serve status --json > "$tailscale_status" || {
+    printf '%s\n' "update-production: could not inspect Funnel and Serve state. Diagnose with: sudo tailscale funnel status; sudo tailscale serve status --json" >&2
+    exit 1
+}
+# Root opens its captured JSON; muriel needs no access to the private staging directory.
+run_with_production_environment /srv/muriel/current/.venv/bin/python -c '
+import json
+import runpy
+import sys
+
+# Reuse the deployed local-edge consumer for exact host/origin validation, without
+# invoking its probes, importing Django settings, or transporting environment secrets.
+try:
+    host, secondary_host = runpy.run_path("/srv/muriel/current/ops/check-public-edge")["configured_hosts"]()
+except RuntimeError as error:
+    raise SystemExit(f"route verification: {error}") from None
+expected = {
+    "TCP": {
+        "443": {
+            "TCPForward": "127.0.0.1:8080",
+            "TerminateTLS": host,
+            "ProxyProtocol": 2,
+        },
+        "8443": {"HTTPS": True},
+    },
+    "Web": {
+        f"{host}:8443": {"Handlers": {"/": {"Proxy": "https+insecure://127.0.0.1:8081"}}},
+    },
+    "AllowFunnel": {f"{host}:443": True},
+}
+staging_route = f"{host}:10000"
+staging_mappings = (
+    ("TCP", "10000"),
+    ("Web", staging_route),
+    ("AllowFunnel", staging_route),
+)
+try:
+    state = json.load(sys.stdin)
+except (ValueError, OSError, RecursionError) as error:
+    raise SystemExit(f"route verification: invalid captured JSON: {error}") from None
+if isinstance(state, dict) and any(
+    isinstance(state.get(section), dict) and key in state[section]
+    for section, key in staging_mappings
+):
+    expected["TCP"]["10000"] = {"HTTPS": True}
+    expected["Web"][staging_route] = {
+        "Handlers": {"/": {"Proxy": "http://127.0.0.1:8082"}}
+    }
+
+
+def structural_mismatch(expected, actual, path="$"):
+    if type(expected) is not type(actual):
+        return f"{path}: expected {type(expected).__name__}, got {type(actual).__name__}"
+    if isinstance(expected, dict):
+        if expected.keys() != actual.keys():
+            return (
+                f"{path}: expected keys {sorted(expected)}, "
+                f"got keys {sorted(actual)}"
+            )
+        for key in sorted(expected):
+            mismatch = structural_mismatch(expected[key], actual[key], f"{path}.{key}")
+            if mismatch:
+                return mismatch
+    elif isinstance(expected, list):
+        if len(expected) != len(actual):
+            return f"{path}: expected {len(expected)} items, got {len(actual)}"
+        for index, (expected_item, actual_item) in enumerate(zip(expected, actual)):
+            mismatch = structural_mismatch(expected_item, actual_item, f"{path}[{index}]")
+            if mismatch:
+                return mismatch
+    elif expected != actual:
+        return f"{path}: expected {expected!r}, got {actual!r}"
+    return None
+
+
+mismatch = structural_mismatch(expected, state)
+if mismatch:
+    raise SystemExit(
+        "configured Funnel and Serve mappings differ from the expected public, Admin, and optional staging routes:\n"
+        f"{mismatch}\n"
+        f"expected={json.dumps(expected, indent=2, sort_keys=True)}\n"
+        f"actual={json.dumps(state, indent=2, sort_keys=True)}"
+    )
+# Report only the identity captured by this successful verification invocation.
+print(f"Public (Cloudflare): https://{secondary_host}/")
+print(f"Public (temporary Funnel fallback): https://{host}/")
+print(f"Admin: https://{host}:8443/admin/")
+' < "$tailscale_status" || {
+    printf '%s\n' "update-production: unexpected Funnel or Serve state. Diagnose with: sudo tailscale funnel status; sudo tailscale serve status --json" >&2
+    exit 1
+}
+printf '%s\n' "update-production: host, services, public edge, Funnel, and Admin Serve are verified."

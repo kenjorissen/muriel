@@ -1,0 +1,11 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_work_remaining %}{% include "schedules/work_remaining_summary.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="workspace-surface-stack" aria-label="Organization-wide work remaining">
+    <section class="workspace-surface surface-frame" aria-labelledby="work-items-heading">
+      <header class="surface-header"><h2 id="work-items-heading">Work items</h2></header>
+      <div class="surface-body">{% include "schedules/data_table.html" with table=work_remaining_table %}</div>
+    </section>
+  </div>
+{% endblock %}

@@ -1,0 +1,6 @@
+<fieldset class="form-choice-group"{% if range_control_name == "period" %} data-schedule-report-period{% else %} data-range-control-choice{% endif %}>
+  <legend>{{ range_control_label }}</legend>
+  <div class="form-choice-group-content"><div>{% for value, label in range_control_choices %}<div><label><input type="radio" name="{{ range_control_name }}" value="{{ value }}"{% if range_control_selected == value %} checked{% endif %}> {{ label }}</label></div>{% endfor %}</div></div>
+</fieldset>
+<div class="range-controls-picker">{% include range_control_picker_template %}</div>
+<div class="form-field-group form-read-only-value"><span class="form-field-label">Effective range</span><output data-range-controls-effective-range>{{ range_control_effective_start|date:"M j, Y" }} through {{ range_control_effective_end|date:"M j, Y" }}</output></div>

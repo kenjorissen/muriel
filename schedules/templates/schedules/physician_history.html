@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}History | {{ physician.display_name }}{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width"><a class="form-return-link" href="{% url 'physician-detail' physician.pk %}">Return to {{ physician.display_name }}</a><h1 class="form-page-title">Change history</h1></header>
+  <section class="surface-frame surface-frame--raised physician-history-section" aria-labelledby="physician-history-heading"><header class="surface-header"><h2 id="physician-history-heading">{{ physician.display_name }}</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=physician_history_table %}</div></section>
+{% endblock %}

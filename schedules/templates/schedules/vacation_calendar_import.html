@@ -1,0 +1,73 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load static %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="vacation-import-layout">
+    <section class="workspace-surface surface-frame surface-frame--raised" aria-labelledby="vacation-import-upload-heading">
+      <header class="surface-header">
+        <h2 id="vacation-import-upload-heading">Upload workbook</h2>
+        <p>Scheduling Administrators only</p>
+      </header>
+      <div class="surface-body surface-content-stack">
+        <p>Upload the July-through-June Excel calendar. Only <strong>V</strong> markers in the <strong>FACULTY:</strong> sections become whole-day vacations. Residents are ignored; event and interview markers are reported for review but are not imported.</p>
+        <form method="post" enctype="multipart/form-data" class="form-layout form-presentation vacation-import-form" data-processing-feedback-form>
+          {% csrf_token %}
+          {% if form.non_field_errors and not plan %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% include "schedules/_form_field.html" with field=form.workbook helper=form.workbook.help_text %}
+          <div class="form-field-group">
+            <div class="form-checkbox-control">{{ form.replace }} <label for="{{ form.replace.id_for_label }}">{{ form.replace.label }}</label></div>
+            {{ form.replace.errors }}
+            <small>{{ form.replace.help_text }}</small>
+          </div>
+          <div class="form-action-area">
+            <button type="submit" name="action" value="preview">Preview workbook</button>
+            <button type="submit" name="action" value="apply">Apply import</button>
+          </div>
+          <p class="form-helper"><strong>Preview</strong> never changes data. <strong>Apply import</strong> writes only after the same validation succeeds and no blockers remain. The uploaded file is not retained after this response.</p>
+          {% include "schedules/processing_feedback.html" with processing_feedback_heading="Muriel is processing the workbook" processing_feedback_message="This may take several seconds." %}
+        </form>
+      </div>
+    </section>
+
+    {% if plan %}
+      <section class="workspace-surface surface-frame workspace-status {% if applied %}surface-tone--clear{% elif plan.blockers or requested_action == 'apply' %}surface-tone--danger{% else %}surface-tone--attention{% endif %}" {% if plan.blockers or requested_action == 'apply' and not applied %}role="alert"{% else %}role="status"{% endif %} aria-labelledby="vacation-import-status-heading">
+        <header class="surface-header">
+          <h2 id="vacation-import-status-heading">{% if applied %}Import applied{% elif plan.blockers %}Preview found blockers{% elif requested_action == 'apply' %}Import not applied{% else %}Preview ready{% endif %}</h2>
+          <p>{{ plan.data.source_name }}</p>
+        </header>
+        <div class="surface-body surface-content-stack">
+          {% if applied %}<p>Vacation data was updated successfully with normal retained history.</p>{% elif plan.blockers %}<p>No data changed. Resolve every blocker before applying this workbook.</p>{% elif requested_action == 'apply' %}<p>No data changed.</p>{% else %}<p>No data changed. Review the interpretation and planned operations below.</p>{% endif %}
+          <dl class="vacation-import-summary">
+            <div><dt>Workbook window</dt><dd>{{ plan.data.start_date|date:"M j, Y" }} – {{ plan.data.end_date|date:"M j, Y" }}</dd></div>
+            <div><dt>Faculty matched</dt><dd>{{ plan.matched_physicians|length }} of {{ plan.data.faculty|length }}</dd></div>
+            <div><dt>Vacation markers</dt><dd>{{ presentation.vacation_days }} days in {{ plan.data.vacations|length }} ranges</dd></div>
+            <div><dt>Planned result</dt><dd>{{ plan.create|length }} create, {{ plan.reuse|length }} reuse, {{ plan.remove|length }} remove</dd></div>
+          </dl>
+          {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% if plan.blockers %}<div class="vacation-import-feedback vacation-import-feedback--blockers"><h3>Blockers</h3><ul>{% for blocker in plan.blockers %}<li>{{ blocker }}</li>{% endfor %}</ul></div>{% endif %}
+          {% if plan.warnings %}<div class="vacation-import-feedback"><h3>Warnings</h3><ul>{% for warning in plan.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% endif %}
+        </div>
+      </section>
+
+      <section class="workspace-surface surface-frame" aria-labelledby="vacation-import-operations-heading">
+        <header class="surface-header"><h2 id="vacation-import-operations-heading">Vacation operations</h2><p>Exact ranges inferred from V markers</p></header>
+        <div class="surface-body">
+          {% if presentation.operations %}
+            <details class="vacation-import-disclosure">
+              <summary>Show all {{ presentation.operations|length }} operations</summary>
+              <div class="table-scroll-frame"><table class="data-table vacation-import-table"><thead><tr><th scope="col">Action</th><th scope="col">Physician</th><th scope="col">Dates</th><th scope="col">Coverage</th></tr></thead><tbody>{% for operation in presentation.operations %}<tr class="vacation-import-operation--{{ operation.kind }}"><td><strong>{{ operation.action }}</strong></td><th scope="row">{{ operation.physician }}</th><td>{{ operation.start_date|date:"M j, Y" }} through {{ operation.end_date|date:"M j, Y" }}</td><td>{{ operation.coverage }}</td></tr>{% endfor %}</tbody></table></div>
+            </details>
+          {% else %}<p class="empty">No Vacation changes are needed.</p>{% endif %}
+        </div>
+      </section>
+
+      <section class="workspace-surface surface-frame" aria-labelledby="vacation-import-ignored-heading">
+        <header class="surface-header"><h2 id="vacation-import-ignored-heading">Reported, not imported</h2><p>Insufficient source detail</p></header>
+        <div class="surface-body surface-content-stack">
+          {% if presentation.ignored_summary %}<ul class="vacation-import-marker-summary">{% for item in presentation.ignored_summary %}<li><strong>{{ item.marker }}</strong> {{ item.label }}: {{ item.count }} physician-day{{ item.count|pluralize }}</li>{% endfor %}</ul><details class="vacation-import-disclosure"><summary>Show marker counts by physician</summary><ul>{% for item in presentation.ignored_details %}<li><strong>{{ item.physician }}</strong>: {{ item.count }} {{ item.label|lower }} day{{ item.count|pluralize }}</li>{% endfor %}</ul></details>{% else %}<p>No event or interview markers were found.</p>{% endif %}
+        </div>
+      </section>
+    {% endif %}
+  </div>
+  <script defer src="{% static 'schedules/form-processing-feedback.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% if content.positions %}
+  {% if content.faculty_coverage_conflict %}<p class="month-session-faculty-coverage-conflict">Faculty coverage gap</p>{% endif %}
+  <ol id="{{ content.target }}" class="month-session-positions session-positions solver-calendar-positions" aria-label="{{ content.period }} assignments for {{ content.date }}">
+    {% for position in content.positions %}<li id="{{ position.target }}" class="month-slot session-slot solver-calendar-position month-slot-{{ position.state }}{% if position.finding_tone %} month-slot--{{ position.finding_tone }}{% endif %}{% if position.changed %} solver-calendar-position--changed{% endif %}" aria-label="{{ position.accessible_label }}">{% if position.changed %}<span class="solver-calendar-delta">{{ position.delta_label }}</span>{% endif %}{{ position.display }}{% if position.edit_url and current %} <a href="{{ position.edit_url }}">Edit proposed assignment</a>{% endif %}</li>{% endfor %}
+  </ol>
+{% else %}
+  <p id="{{ content.target }}" class="month-slot month-slot-{{ content.state }}{% if content.finding_tone %} month-slot--{{ content.finding_tone }}{% endif %}{% if content.changed %} solver-calendar-position--changed{% endif %}" aria-label="{{ content.accessible_label }}">{% if content.changed %}<span class="solver-calendar-delta">{{ content.delta_label }}</span>{% endif %}{{ content.display }}{% if content.edit_url and current %} <a href="{{ content.edit_url }}">Edit proposed assignment</a>{% endif %}</p>
+{% endif %}

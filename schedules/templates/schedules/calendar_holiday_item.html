@@ -1,0 +1,1 @@
+{% for holiday in content %}<p class="calendar-holiday" aria-label="Holiday: {{ holiday.name }}, {{ holiday.coverage_label }}">{{ holiday.name }}{% if holiday.name == "Christmas Eve" %}, PM{% endif %}</p>{% endfor %}

@@ -1,0 +1,50 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load static %}
+{% block schedule_workspace_period_controls %}
+  <form class="form-presentation schedule-report-controls" method="get" action="{{ schedule_report_url }}" data-processing-feedback-form data-schedule-report-controls data-schedule-report-today="{{ schedule_report_parameters.today|date:'Y-m-d' }}">
+    <section class="surface-frame surface-frame--raised" aria-labelledby="schedule-report-definition-heading">
+      <header class="surface-header"><h2 id="schedule-report-definition-heading">Report Definition</h2></header>
+      <div class="surface-body form-content-stack">
+        <div class="form-field-group">
+          <label for="schedule-report-schedule">Schedule</label>
+          <select id="schedule-report-schedule" name="schedule" required>
+            <option value="" disabled{% if not report %} selected{% endif %}>Select a report</option>
+            {% for value, label in schedule_choices %}<option value="{{ value }}"{% if report and report.parameters.schedule == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="schedule-report-range-heading">
+      <header class="surface-header"><h2 id="schedule-report-range-heading">Date Range</h2></header>
+      <div class="surface-body form-content-stack">
+        {% include "schedules/date_range_controls.html" with range_control_name="period" range_control_label="Range" range_control_choices=period_choices range_control_selected=schedule_report_parameters.period range_control_picker_template="schedules/schedule_report_range_picker.html" range_control_effective_start=schedule_report_parameters.start_date range_control_effective_end=schedule_report_parameters.end_date %}
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="schedule-report-coverage-heading">
+      <header class="surface-header"><h2 id="schedule-report-coverage-heading">Coverage</h2></header>
+      <div class="surface-body form-content-stack">
+        <fieldset class="form-choice-group">
+          <legend>Include</legend>
+          <div class="form-choice-group-content"><div>{% for choice in schedule_report_coverage_choices %}<div data-schedule-report-coverage-choice="{{ choice.value }}"{% if not choice.available %}{% if choice.value == 'history-and-scheduled' %} hidden{% endif %}{% endif %}><label><input type="radio" name="coverage" value="{{ choice.value }}" aria-describedby="schedule-report-coverage-message"{% if schedule_report_parameters.coverage == choice.value %} checked{% endif %}{% if not choice.available %} disabled{% endif %}> {{ choice.label }}</label></div>{% endfor %}</div></div>
+        </fieldset>
+        <p class="form-helper meta" id="schedule-report-coverage-message" data-schedule-report-coverage-message aria-live="polite">{% if not schedule_report_parameters.has_history %}History is unavailable because this period begins today or later.{% elif not schedule_report_parameters.has_scheduled %}Scheduled is unavailable because this period ends before today.{% else %}History ends yesterday; Scheduled begins today in the organization timezone.{% endif %}</p>
+        <div class="form-field-group form-read-only-value" data-schedule-report-included-dates{% if schedule_report_parameters.start_date == schedule_report_parameters.effective_start and schedule_report_parameters.end_date == schedule_report_parameters.effective_end %} hidden{% endif %}><span class="form-field-label">Included dates</span><output data-schedule-report-included-dates-value>{{ schedule_report_parameters.effective_start|date:"M j, Y" }} through {{ schedule_report_parameters.effective_end|date:"M j, Y" }}</output></div>
+      </div>
+    </section>
+    <noscript><div class="form-action-area"><button type="submit">Update report</button></div></noscript>
+    {% include "schedules/processing_feedback.html" with processing_feedback_heading="Loading schedule report" processing_feedback_message="Your schedule report is loading." %}
+  </form>
+  <script defer src="{% static 'schedules/range-controls.js' %}"></script><script defer src="{% static 'schedules/form-processing-feedback.js' %}"></script><script defer src="{% static 'schedules/schedule-report-controls.js' %}"></script>
+{% endblock %}
+{% block schedule_workspace_content %}
+  {% if report %}
+  <h1 class="visually-hidden">{% if report.parameters.schedule == 'community-precepting' %}Community Precepting{% elif report.parameters.schedule == 'academic-events' %}Academic Events{% elif report.parameters.schedule == 'interviews' %}Interviews{% elif report.parameters.schedule == 'normal-rounding' %}Normal Rounding{% elif report.parameters.schedule == 'casual-rounding' %}Casual Rounding{% elif report.parameters.schedule == 'vacation' %}Vacation{% else %}Precepting{% endif %} schedule report</h1>
+  <div class="workspace-surface-stack" aria-label="{% if report.parameters.schedule == 'community-precepting' %}Community Precepting{% elif report.parameters.schedule == 'academic-events' %}Academic Events{% elif report.parameters.schedule == 'interviews' %}Interviews{% elif report.parameters.schedule == 'normal-rounding' %}Normal Rounding{% elif report.parameters.schedule == 'casual-rounding' %}Casual Rounding{% elif report.parameters.schedule == 'vacation' %}Vacation{% else %}Precepting{% endif %} schedule report">
+    {% if report.parameters.includes_scheduled %}<section class="workspace-surface surface-frame surface-tone--attention"><div class="surface-body"><strong>Planning report, not final.</strong> Scheduled assignments and current availability facts can still change.</div></section>{% endif %}
+    <section class="workspace-surface surface-frame"><header class="surface-header schedule-workspace-actions-header"><h2>{% if report.parameters.schedule == 'community-precepting' %}Community Precepting{% elif report.parameters.schedule == 'academic-events' %}Academic Events{% elif report.parameters.schedule == 'interviews' %}Interviews{% elif report.parameters.schedule == 'normal-rounding' %}Normal Rounding{% elif report.parameters.schedule == 'casual-rounding' %}Casual Rounding{% elif report.parameters.schedule == 'vacation' %}Vacation{% else %}Precepting{% endif %} workload</h2><p>{{ report.parameters.effective_start|date:"M j, Y" }} through {{ report.parameters.effective_end|date:"M j, Y" }}</p><a href="{{ schedule_report_pdf_url }}">Download PDF</a></header><div class="surface-body">{% include "schedules/data_table.html" with table=schedule_report_table %}</div></section>
+    {% if report.parameters.includes_scheduled %}<section class="workspace-surface surface-frame"><header class="surface-header"><h2>Current findings</h2><p>Summary only</p></header><div class="surface-body">{% include "schedules/data_table.html" with table=schedule_report_findings_table %}</div></section>{% endif %}
+  </div>
+  {% else %}
+  <h1 class="visually-hidden">Schedule Reports</h1>
+  {% endif %}
+{% endblock %}

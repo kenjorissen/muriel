@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Muriel PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 02:17:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+Unit=muriel-backup.service
+
+[Install]
+WantedBy=timers.target

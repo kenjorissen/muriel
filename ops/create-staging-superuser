@@ -1,0 +1,82 @@
+#!/bin/sh
+# Create a staging-only Django superuser on the isolated staging release.
+set -eu
+
+usage() {
+    printf '%s\n' "Usage: $0 TARGET (must equal MURIEL_SSH_TARGET)" >&2
+    printf '%s\n' "       sudo $0 [--root DIRECTORY]" >&2
+    exit 2
+}
+
+# Only the operator mode needs repository SSH support. The installed host-local
+# copy runs without that sibling helper or any local SSH target configuration.
+if [ "$#" -gt 0 ] && [ "$1" != --root ]; then
+    . "$(dirname -- "$0")/require-ssh-target.sh"
+    exec ssh -tt "$MURIEL_SSH_TARGET" "sudo /srv/muriel-staging/create-superuser"
+fi
+root=/
+if [ "$#" -gt 0 ]; then
+    [ "$#" -eq 2 ] && [ "$1" = --root ] || usage
+    root=$2
+    [ -d "$root" ] && [ ! -L "$root" ] || usage
+fi
+root=$(CDPATH= cd -- "$root" && pwd -P)
+
+fail() {
+    printf '%s\n' "create-staging-superuser: $*" >&2
+    exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || fail "must run through sudo"
+
+base=$root/srv/muriel-staging
+releases=$base/releases
+release=$base/current
+environment_file=$root/etc/muriel-staging/environment
+
+[ -d "$base" ] && [ ! -L "$base" ] || fail "staging installation directory is missing or unsafe"
+[ -d "$releases" ] && [ ! -L "$releases" ] || fail "staging release directory is missing or unsafe"
+[ -L "$release" ] && [ -d "$release" ] || fail "current staging release is missing or unsafe"
+resolved_releases=$(CDPATH= cd -- "$releases" && pwd -P)
+resolved_release=$(CDPATH= cd -- "$release" && pwd -P)
+case "$resolved_release" in
+    "$resolved_releases"/*) ;;
+    *) fail "current staging release is outside the managed release directory" ;;
+esac
+[ -x "$resolved_release/.venv/bin/python" ] || fail "current staging Python is missing or unsafe"
+[ -f "$resolved_release/manage.py" ] && [ ! -L "$resolved_release/manage.py" ] || \
+    fail "current staging manage.py is missing or unsafe"
+
+[ -f "$environment_file" ] && [ ! -L "$environment_file" ] && [ -r "$environment_file" ] || \
+    fail "staging environment file is missing or unsafe"
+if [ "$root" = / ]; then
+    [ "$(stat -c '%U:%G:%a' "$environment_file")" = root:muriel_staging:640 ] || \
+        fail "staging environment file must be root:muriel_staging mode 0640"
+fi
+for setting in \
+    PRECEPTOR_STAGING_SECRET_KEY \
+    PRECEPTOR_STAGING_ALLOWED_HOST \
+    PRECEPTOR_STAGING_CSRF_TRUSTED_ORIGIN \
+    PRECEPTOR_STAGING_POSTGRES_NAME \
+    PRECEPTOR_STAGING_POSTGRES_USER; do
+    grep -q "^[[:space:]]*$setting=" "$environment_file" || \
+        fail "required staging configuration is missing: $setting"
+done
+grep -q '^[[:space:]]*PRECEPTOR_STAGING_POSTGRES_NAME=muriel_staging[[:space:]]*$' "$environment_file" || \
+    fail "requires PRECEPTOR_STAGING_POSTGRES_NAME=muriel_staging"
+grep -q '^[[:space:]]*PRECEPTOR_STAGING_POSTGRES_USER=muriel_staging[[:space:]]*$' "$environment_file" || \
+    fail "requires PRECEPTOR_STAGING_POSTGRES_USER=muriel_staging"
+
+runuser -u muriel_staging -- sh -c '
+    set -eu
+    set -a
+    . "$1"
+    set +a
+    [ -n "${PRECEPTOR_STAGING_SECRET_KEY:-}" ] || exit 1
+    [ "${PRECEPTOR_STAGING_POSTGRES_NAME:-}" = muriel_staging ] || exit 1
+    [ "${PRECEPTOR_STAGING_POSTGRES_USER:-}" = muriel_staging ] || exit 1
+    DJANGO_SETTINGS_MODULE=preceptor_project.staging_settings
+    export DJANGO_SETTINGS_MODULE
+    cd "$2"
+    exec "$3" manage.py createsuperuser
+' sh "$environment_file" "$resolved_release" "$resolved_release/.venv/bin/python"

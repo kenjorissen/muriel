@@ -1,0 +1,168 @@
+#!/bin/sh
+# Replace only Muriel's scheduling domain after a verified, off-host backup.
+set -eu
+
+usage() {
+    printf '%s\n' "Usage: sudo $0 demo|empty|synthetic [--actor USERNAME] [--seed SEED] [--root DIRECTORY]" >&2
+    exit 2
+}
+
+fail() {
+    printf '%s\n' "reset-production-domain: $*" >&2
+    exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || fail "must run through sudo"
+[ "$#" -ge 1 ] || usage
+mode=$1
+shift
+case "$mode" in demo|empty|synthetic) ;; *) usage ;; esac
+actor=
+seed=
+root=/
+test_root=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --actor)
+            [ "$#" -ge 2 ] || usage
+            actor=$2
+            shift
+            ;;
+        --root)
+            [ "$#" -ge 2 ] || usage
+            root=$2
+            test_root=1
+            shift
+            ;;
+        --seed)
+            [ "$#" -ge 2 ] || usage
+            seed=$2
+            shift
+            ;;
+        *) usage ;;
+    esac
+    shift
+done
+[ "$mode" = demo ] || [ "$mode" = synthetic ] || [ -z "$actor" ] || fail "--actor is valid only in demo or synthetic mode"
+[ "$mode" = synthetic ] || [ -z "$seed" ] || fail "--seed is valid only in synthetic mode"
+[ -d "$root" ] && [ ! -L "$root" ] || fail "--root must be an existing, non-symlink directory"
+root=$(CDPATH= cd -- "$root" && pwd -P)
+
+challenge_animal() {
+    animals='ANT APE BADGER BAT BEAR BEAVER BISON BOBCAT CAMEL CAT COBRA CRAB DEER DOG DOVE EAGLE FERRET FINCH FOX FROG GECKO GOAT HARE HAWK HERON IBIS KOALA LAMB LEMUR LION LYNX MINK MOOSE MOTH MULE NEWT OTTER OWL PANDA PUMA RAVEN SEAL SHARK SHEEP SKUNK SNAKE TIGER TOAD WOLF YAK ZEBRA'
+    if [ "$test_root" -eq 1 ] && [ "$root" != / ] && [ -n "${MURIEL_TEST_CHALLENGE_ANIMAL+x}" ]; then
+        animal=$MURIEL_TEST_CHALLENGE_ANIMAL
+    else
+        random=$(od -An -N2 -tu2 /dev/urandom | tr -d ' ')
+        case "$random" in ''|*[!0-9]*) fail "could not generate confirmation challenge" ;; esac
+        set -- $animals
+        number=$((random % $# + 1))
+        while [ "$number" -gt 1 ]; do
+            shift
+            number=$((number - 1))
+        done
+        animal=$1
+    fi
+    case " $animals " in *" $animal "*) printf '%s\n' "$animal" ;; *) fail "invalid test confirmation challenge" ;; esac
+}
+
+confirm_production() {
+    action=$(printf '%s' "$mode" | tr '[:lower:]' '[:upper:]')
+    host=$(hostname) || fail "could not identify the production host"
+    [ -n "$host" ] || fail "could not identify the production host"
+    animal=$(challenge_animal)
+    expected="$action PRODUCTION MURIEL $animal"
+
+    printf '%s\n' "DESTRUCTIVE PRODUCTION ACTION: $action scheduling domain" >&2
+    printf '%s\n' "Host: $host" >&2
+    printf '%s\n' "Database: muriel" >&2
+    printf '%s\n' "A newly verified local and off-host backup is required before this action." >&2
+    printf '%s\n' "Type exactly: $expected" >&2
+    if [ "$test_root" -eq 1 ] && [ "$root" != / ] && [ -n "${MURIEL_TEST_CONFIRMATION+x}" ]; then
+        response=$MURIEL_TEST_CONFIRMATION
+    elif ! IFS= read -r response </dev/tty; then
+        fail "refusing destructive production domain reset without a controlling terminal"
+    fi
+    [ "$response" = "$expected" ] || fail "confirmation phrase did not match; no changes were made"
+}
+
+confirm_production
+
+base=$root/srv/muriel
+release=$base/current
+environment_file=$root/etc/muriel/environment
+backup_directory=$root/var/backups/muriel
+[ -L "$release" ] && [ -d "$release" ] || fail "current production release is missing or unsafe"
+[ -f "$environment_file" ] && [ ! -L "$environment_file" ] && [ -r "$environment_file" ] || \
+    fail "production environment file is missing or unsafe"
+[ -d "$backup_directory" ] && [ ! -L "$backup_directory" ] || fail "backup directory is missing or unsafe"
+
+set -a
+. "$environment_file"
+set +a
+[ "${PRECEPTOR_POSTGRES_NAME:-}" = muriel ] || fail "requires PRECEPTOR_POSTGRES_NAME=muriel"
+[ "${PRECEPTOR_POSTGRES_USER:-}" = muriel ] || fail "requires PRECEPTOR_POSTGRES_USER=muriel"
+[ "${PRECEPTOR_POSTGRES_HOST:-/var/run/postgresql}" = /var/run/postgresql ] || \
+    fail "requires the PostgreSQL 18/main local socket"
+[ "${PRECEPTOR_POSTGRES_PORT:-5432}" = 5432 ] || fail "requires PostgreSQL 18/main port 5432"
+command -v pg_lsclusters >/dev/null 2>&1 || fail "pg_lsclusters is required"
+pg_lsclusters --no-header | grep -Eq '^18[[:space:]]+main[[:space:]]+5432[[:space:]]+online[[:space:]]' || \
+    fail "PostgreSQL 18/main must own local port 5432"
+
+run_as_muriel() {
+    runuser -u muriel -- sh -c '
+        set -eu
+        set -a
+        . "$1"
+        set +a
+        DJANGO_SETTINGS_MODULE=preceptor_project.production_settings
+        export DJANGO_SETTINGS_MODULE
+        cd "$2"
+        shift 2
+        exec "$@"
+    ' sh "$environment_file" "$release" "$@"
+}
+
+backup_report=$(runuser -u muriel -- env \
+    "MURIEL_ENVIRONMENT_FILE=$environment_file" \
+    "MURIEL_BACKUP_DIRECTORY=$backup_directory" \
+    "MURIEL_RELEASE_DIRECTORY=$release" \
+    "$base/backup-database" --label pre-deploy) || fail "new verified local and off-host backup failed"
+case "$backup_report" in
+    'Backup protected locally and off-host: pre-deploy-'????????T??????Z.dump) ;;
+    *) fail "new backup did not report local and off-host protection" ;;
+esac
+
+service_stopped=0
+restore_after_failure() {
+    status=$1
+    trap - EXIT HUP INT TERM
+    if [ "$service_stopped" -eq 1 ]; then
+        if systemctl start muriel && systemctl is-active --quiet muriel; then
+            printf '%s\n' "reset-production-domain: operation failed; Muriel was restored to an active state." >&2
+        else
+            printf '%s\n' "reset-production-domain: operation failed and Muriel could not be restored to an active state." >&2
+        fi
+    fi
+    exit "$status"
+}
+on_exit() {
+    restore_after_failure "$?"
+}
+trap on_exit EXIT
+trap 'restore_after_failure 129' HUP
+trap 'restore_after_failure 130' INT
+trap 'restore_after_failure 143' TERM
+
+service_stopped=1
+systemctl stop muriel
+set -- "$release/.venv/bin/python" manage.py reset_production_domain "$mode"
+[ -z "$actor" ] || set -- "$@" --actor "$actor"
+[ -z "$seed" ] || set -- "$@" --seed "$seed"
+run_as_muriel "$@"
+run_as_muriel "$release/scripts/check-production"
+systemctl start muriel
+systemctl is-active --quiet muriel
+service_stopped=0
+trap - EXIT HUP INT TERM
+printf '%s\n' "Production scheduling domain replaced with $mode data; Muriel is active."

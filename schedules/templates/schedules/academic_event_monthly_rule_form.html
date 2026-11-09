@@ -1,0 +1,12 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<header class="form-page-intro form-page-intro--contained"><a href="{% url 'academic-event-definition-correct' definition.pk %}">Back to {{ definition.base_name }}</a><h1 class="form-page-title">{{ title }}</h1></header>
+<form method="post" class="source-schedule-form form-layout form-presentation">{% csrf_token %}{% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<section class="surface-frame surface-frame--raised"><div class="surface-body"><div class="form-field-grid form-field-grid--source-details">{% include "schedules/_form_field.html" with field=form.weekday %}</div></div></section>
+<section class="surface-frame surface-frame--raised"><div class="surface-body">{% include "schedules/_form_choice_group.html" with field=form.ordinals %}</div></section>
+<section class="surface-frame surface-frame--raised"><div class="surface-body"><div class="form-field-grid form-field-grid--effective-range">{% include "schedules/_form_field.html" with field=form.effective_start %}{% include "schedules/_form_field.html" with field=form.effective_end %}</div></div></section>
+{% include "schedules/_recurrence_rule_context.html" with recurrence_rules=rules current_rule=rule show_recurrence_rule_context=True %}
+<section class="surface-frame surface-frame--raised"><div class="surface-body">{% include "schedules/_form_field.html" with field=form.reason helper=form.reason.help_text %}<div class="form-action-area"><button type="submit">Save</button></div></div></section></form>
+{% if rule %}<form method="post" action="{% url 'academic-event-monthly-rule-remove' rule.pk %}">{% csrf_token %}<button class="form-action--destructive" type="submit">Remove</button></form>{% endif %}
+{% endblock %}

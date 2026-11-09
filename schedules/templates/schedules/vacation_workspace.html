@@ -1,0 +1,10 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load static %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="workspace-surface-stack" aria-label="Vacation schedule">
+    {% include "schedules/vacation_actions.html" %}
+    {% include "schedules/schedule_workspace_calendar_frame.html" with schedule_workspace_calendar_template="schedules/vacation_calendar.html" %}
+  </div>
+  <script defer src="{% static 'schedules/calendar-day-actions.js' %}"></script>
+{% endblock %}

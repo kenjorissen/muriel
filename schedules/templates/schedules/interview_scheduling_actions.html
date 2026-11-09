@@ -1,0 +1,26 @@
+<section class="workspace-surface surface-frame workspace-actions interview-actions">
+  {% include "schedules/schedule_workspace_contextual_action_header.html" with history_url=interview_history_url history_label=interview_history_label %}
+  <div class="surface-body">
+    <div class="contextual-action-row">
+      {% if interview_summary.attention_active and interview_summary.remaining_to_20 %}
+        <span class="calendar-finding-indicator calendar-finding-indicator--hard" role="img" aria-label="{% if interview_summary.remaining_to_20 == 1 %}1 interview remains to be scheduled ({{ interview_summary.active_count }} of 20 scheduled).{% else %}{{ interview_summary.remaining_to_20 }} interviews remain to be scheduled ({{ interview_summary.active_count }} of 20 scheduled).{% endif %}" title="{% if interview_summary.remaining_to_20 == 1 %}1 interview remains to be scheduled ({{ interview_summary.active_count }} of 20 scheduled).{% else %}{{ interview_summary.remaining_to_20 }} interviews remain to be scheduled ({{ interview_summary.active_count }} of 20 scheduled).{% endif %}">!</span>
+      {% elif interview_summary.attention_active and interview_summary.over_target_count %}
+        <span class="calendar-finding-indicator calendar-finding-indicator--hard" role="img" aria-label="{% if interview_summary.over_target_count == 1 %}1 interview exceeds the required 20 ({{ interview_summary.active_count }} scheduled).{% else %}{{ interview_summary.over_target_count }} interviews exceed the required 20 ({{ interview_summary.active_count }} scheduled).{% endif %}" title="{% if interview_summary.over_target_count == 1 %}1 interview exceeds the required 20 ({{ interview_summary.active_count }} scheduled).{% else %}{{ interview_summary.over_target_count }} interviews exceed the required 20 ({{ interview_summary.active_count }} scheduled).{% endif %}">!</span>
+      {% endif %}
+      <a class="button-link" href="{{ interview_add_action }}">Schedule Interview</a>
+      <span class="interview-quota-status">
+        {% if interview_summary.attention_active and interview_summary.remaining_to_20 %}
+          {% if interview_summary.remaining_to_20 == 1 %}1 interview remains to be scheduled ({{ interview_summary.active_count }} of 20 scheduled).{% else %}{{ interview_summary.remaining_to_20 }} interviews remain to be scheduled ({{ interview_summary.active_count }} of 20 scheduled).{% endif %}
+        {% elif interview_summary.attention_active and interview_summary.over_target_count %}
+          {% if interview_summary.over_target_count == 1 %}1 interview exceeds the required 20 ({{ interview_summary.active_count }} scheduled).{% else %}{{ interview_summary.over_target_count }} interviews exceed the required 20 ({{ interview_summary.active_count }} scheduled).{% endif %}
+        {% elif interview_summary.active_count == 20 %}
+          20 of 20 required interviews scheduled.
+        {% elif interview_summary.active_count > 20 %}
+          {% if interview_summary.active_count == 21 %}1 interview exceeds the required 20 ({{ interview_summary.active_count }} scheduled).{% else %}{{ interview_summary.active_count|add:"-20" }} interviews exceed the required 20 ({{ interview_summary.active_count }} scheduled).{% endif %}
+        {% else %}
+          {{ interview_summary.active_count }} of 20 required interviews scheduled.
+        {% endif %}
+      </span>
+    </div>
+  </div>
+</section>

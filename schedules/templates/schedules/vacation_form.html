@@ -1,0 +1,34 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ title }} | Vacation Schedule{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained">
+    <a href="{{ workspace_url }}">Back to Vacation Schedule</a>
+    <h1 class="form-page-title">{{ title }}</h1>
+  </header>
+  <form method="post" action="{{ form_action }}" class="vacation-form source-schedule-form form-layout form-presentation">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="vacation-details-heading">
+      <header class="surface-header"><h2 id="vacation-details-heading">Vacation details</h2></header>
+      <div class="surface-body">
+        <div class="form-field-grid form-field-grid--source-details">
+          {% if vacation %}
+            <div class="form-field-group form-read-only-value"><span class="form-field-label">Physician</span><span><strong>Physician:</strong> {{ vacation.physician.display_name }}</span></div>
+          {% else %}
+            {% include "schedules/_form_field.html" with field=form.physician %}
+          {% endif %}
+          {% include "schedules/_form_field.html" with field=form.period_of_day %}
+        </div>
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="vacation-dates-heading">
+      <header class="surface-header"><h2 id="vacation-dates-heading">Dates</h2><p>Vacation applies inclusively through the end date.</p></header>
+      <div class="surface-body"><div class="form-field-grid form-field-grid--effective-range">{% include "schedules/_form_field.html" with field=form.start_date %}{% include "schedules/_form_field.html" with field=form.end_date %}</div></div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="vacation-notes-heading">
+      <header class="surface-header"><h2 id="vacation-notes-heading">Actions</h2></header>
+      <div class="surface-body form-content-stack">{% include "schedules/_form_field.html" with field=form.note helper=form.note.help_text %}<div class="form-action-area"><button type="submit">Save vacation</button><a href="{{ workspace_url }}">Back to Vacation Schedule</a></div></div>
+    </section>
+  </form>
+  {% if vacation %}<section class="surface-frame surface-frame--raised surface-frame--removal surface-tone--danger" aria-labelledby="vacation-removal-heading"><header class="surface-header"><h2 id="vacation-removal-heading">Remove vacation</h2><p>This retains the final vacation note in Vacation Schedule history.</p></header><div class="surface-body"><form method="post" action="{{ remove_action }}" class="form-content-stack">{% csrf_token %}<div class="form-action-area"><button class="form-action--destructive" type="submit">Remove vacation</button></div></form></div></section>{% endif %}
+{% endblock %}

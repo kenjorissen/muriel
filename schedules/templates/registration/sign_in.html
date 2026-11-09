@@ -1,0 +1,26 @@
+{% extends "schedules/base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+  <section class="panel sign-in-panel" aria-labelledby="sign-in-heading">
+    <h1 id="sign-in-heading">Sign in</h1>
+    <p class="sign-in-introduction">Sign in to work on preceptor schedules.</p>
+    <form class="sign-in-form" method="post">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="sign-in-form-errors" role="alert">{{ form.non_field_errors }}</div>
+      {% endif %}
+      {% for field in form %}
+        <div class="sign-in-field">
+          {{ field.label_tag }}
+          {{ field }}
+          {{ field.errors }}
+        </div>
+      {% endfor %}
+      {% if next %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">{% endif %}
+      <div class="sign-in-actions">
+        <button type="submit">Sign in</button>
+      </div>
+    </form>
+    <p class="sign-in-help"><a href="{% url 'password_reset' %}">Forgot password?</a></p>
+  </section>
+{% endblock %}

@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}Account change history{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width"><a class="form-return-link" href="{% url 'account-workspace' %}">Return to Account Administration</a><h1 class="form-page-title">Account change history</h1></header>
+  <section class="surface-frame surface-frame--raised" aria-labelledby="account-history-heading"><header class="surface-header"><h2 id="account-history-heading">Retained account changes</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=account_history_table %}</div></section>
+{% endblock %}

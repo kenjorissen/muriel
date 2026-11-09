@@ -1,0 +1,47 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ title }} | {{ physician.display_name }}{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width">
+    <a class="form-return-link" href="{% url 'physician-detail' physician.pk %}">Return to {{ physician.display_name }}</a>
+    <h1 class="form-page-title">{{ title }}</h1>
+    <p>{% if community_float_schedule_inputs %}These selections record added Float availability. Off does not change Community Preceptor recurrence commitments.{% else %}Set all ten weekday AM/PM schedule-state selections. Patient care and Off both prevent scheduling; Backup only is not a backup assignment.{% endif %}</p>
+  </header>
+  <form method="post" class="faculty-availability-form form-layout form-presentation">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="availability-range-heading">
+      <header class="surface-header">
+        <h2 id="availability-range-heading">{% if transition %}Start date{% else %}Effective range{% endif %}</h2>
+        <p>{% if transition %}The preceding template ends on the calendar day before this date.{% else %}Both dates are optional. Leave start blank for no lower bound and end blank for no upper bound.{% endif %}</p>
+      </header>
+      <div class="surface-body form-content-stack">
+        <div class="form-field-grid form-field-grid--effective-range">
+          {% include "schedules/_form_field.html" with field=form.effective_start %}
+          {% if not transition %}{% include "schedules/_form_field.html" with field=form.effective_end %}{% endif %}
+        </div>
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="weekly-template-heading">
+      <header class="surface-header">
+        <h2 id="weekly-template-heading">Weekly template</h2>
+        <p>{% if community_float_schedule_inputs %}Every slot starts Off so you only need to change added Float periods. Admin - Float records an Admin Float period.{% else %}Schedule states appear first. Active schedule options assigned to {{ physician.display_name }} appear below them.{% endif %}</p>
+      </header>
+      <div class="surface-body">
+        <div class="availability-week">
+          <fieldset class="availability-day"><legend>Monday</legend><div class="availability-periods"><fieldset class="availability-period"><legend>AM</legend><div class="availability-choices">{{ form.monday_am }}</div>{{ form.monday_am.errors }}</fieldset><fieldset class="availability-period"><legend>PM</legend><div class="availability-choices">{{ form.monday_pm }}</div>{{ form.monday_pm.errors }}</fieldset></div></fieldset>
+          <fieldset class="availability-day"><legend>Tuesday</legend><div class="availability-periods"><fieldset class="availability-period"><legend>AM</legend><div class="availability-choices">{{ form.tuesday_am }}</div>{{ form.tuesday_am.errors }}</fieldset><fieldset class="availability-period"><legend>PM</legend><div class="availability-choices">{{ form.tuesday_pm }}</div>{{ form.tuesday_pm.errors }}</fieldset></div></fieldset>
+          <fieldset class="availability-day"><legend>Wednesday</legend><div class="availability-periods"><fieldset class="availability-period"><legend>AM</legend><div class="availability-choices">{{ form.wednesday_am }}</div>{{ form.wednesday_am.errors }}</fieldset><fieldset class="availability-period"><legend>PM</legend><div class="availability-choices">{{ form.wednesday_pm }}</div>{{ form.wednesday_pm.errors }}</fieldset></div></fieldset>
+          <fieldset class="availability-day"><legend>Thursday</legend><div class="availability-periods"><fieldset class="availability-period"><legend>AM</legend><div class="availability-choices">{{ form.thursday_am }}</div>{{ form.thursday_am.errors }}</fieldset><fieldset class="availability-period"><legend>PM</legend><div class="availability-choices">{{ form.thursday_pm }}</div>{{ form.thursday_pm.errors }}</fieldset></div></fieldset>
+          <fieldset class="availability-day"><legend>Friday</legend><div class="availability-periods"><fieldset class="availability-period"><legend>AM</legend><div class="availability-choices">{{ form.friday_am }}</div>{{ form.friday_am.errors }}</fieldset><fieldset class="availability-period"><legend>PM</legend><div class="availability-choices">{{ form.friday_pm }}</div>{{ form.friday_pm.errors }}</fieldset></div></fieldset>
+        </div>
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="availability-notes-heading">
+      <header class="surface-header"><h2 id="availability-notes-heading">Actions</h2></header>
+      <div class="surface-body form-content-stack">
+        {% include "schedules/_form_field.html" with field=form.reason field_classes="form-field-group--wide" helper=form.reason.help_text %}
+        <div class="form-action-area"><button type="submit">{{ title }}</button><a href="{% url 'physician-detail' physician.pk %}">Return to {{ physician.display_name }}</a></div>
+      </div>
+    </section>
+  </form>
+{% endblock %}

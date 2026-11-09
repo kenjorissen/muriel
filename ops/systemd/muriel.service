@@ -1,0 +1,30 @@
+[Unit]
+Description=Muriel Django application
+Requires=postgresql@18-main.service
+After=network-online.target postgresql@18-main.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=muriel
+Group=muriel
+WorkingDirectory=/srv/muriel/current
+EnvironmentFile=/etc/muriel/environment
+ExecStart=/srv/muriel/current/scripts/start-production
+RuntimeDirectory=muriel
+RuntimeDirectoryMode=0750
+UMask=0007
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=60
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+LimitNOFILE=4096
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

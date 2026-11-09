@@ -1,0 +1,4 @@
+<section class="workspace-surface surface-frame workspace-actions vacation-actions">
+  {% include "schedules/schedule_workspace_contextual_action_header.html" with history_url=vacation_history_url history_label="Vacation history" %}
+  <div class="surface-body surface-content-stack">{% if vacation_view == "calendar" %}<p>Click the “Add Vacation” button to add a new vacation starting today. Click on a day in the calendar to start a vacation on that day.</p>{% elif vacation_view == "list" %}<p>Select Edit in the list below to update a vacation.</p>{% endif %}<div class="form-action-area"><a class="button-link" href="{{ vacation_add_url }}">Add vacation</a></div></div>
+</section>

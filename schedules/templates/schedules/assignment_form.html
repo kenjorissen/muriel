@@ -1,0 +1,95 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+<div class="surface-stack" aria-label="{{ position_label }} assignment">
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width">
+    <a class="form-return-link" href="{{ return_url }}">Back to schedule</a>
+    <h1 class="form-page-title">{{ position_label }} assignment</h1>
+    <p class="form-page-helper">{{ session.date|date:"l, F j, Y" }} · {{ session.period_of_day }}</p>
+    {% if cleanup_closure %}
+      <p>{{ cleanup_closure.name }} closes this {{ cleanup_closure.coverage_label }} clinic shift. This retained assignment can only be removed.</p>
+    {% endif %}
+  </header>
+
+  {% if messages %}
+    <section class="surface-frame surface-frame--raised surface-tone--attention" aria-label="Scheduling update"><div class="surface-body surface-content-stack">{% for message in messages %}<p>{{ message }}</p>{% endfor %}</div></section>
+  {% endif %}
+
+  {% include "schedules/_assignment_current.html" %}
+
+  {% if finding_entries %}
+    <section class="surface-frame surface-frame--raised assignment-findings" aria-labelledby="current-findings-heading">
+      <header class="surface-header"><h2 id="current-findings-heading">Current findings</h2></header>
+      <div class="surface-body surface-content-stack">
+        {% for entry in finding_entries %}
+            <section class="finding finding-{% if entry.acknowledgement %}exception{% else %}{{ entry.finding.severity }}{% endif %} surface-content-stack">
+              <p><strong>{{ entry.finding.severity|capfirst }}</strong>: {{ entry.finding.message }}</p>
+              {% if entry.finding.physicians %}<p>Related Physicians: {% for physician in entry.finding.physicians %}<a href="{{ physician.url }}">{{ physician.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+              {% if entry.finding.source_links %}<p>Sources: {% for source in entry.finding.source_links %}<a href="{{ source.url }}">{{ source.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+              {% if entry.rounding_url %}<p><a href="{{ entry.rounding_url }}">Inspect Rounding Schedule</a></p>{% endif %}
+              {% if entry.finding.severity == "hard" %}
+                {% if entry.acknowledgement %}
+                  <p><strong>Acknowledged exception.</strong> {{ entry.acknowledgement.reason }}</p>
+                  <p class="meta">Acknowledged by {{ entry.acknowledgement.acknowledged_by.get_username }} at {{ entry.acknowledgement.acknowledged_at }}.</p>
+                  <form action="{% url 'session-finding-override-remove' session_id=session.pk %}{{ return_query }}" method="post" class="form-content-stack">
+                    {% csrf_token %}
+                    <input type="hidden" name="acknowledgement_id" value="{{ entry.acknowledgement.pk }}">
+                    <input type="hidden" name="code" value="{{ entry.code }}">
+                    <input type="hidden" name="position" value="{{ entry.position }}">
+                    <input type="hidden" name="scope" value="{{ entry.scope }}">
+                    <input type="hidden" name="editor_position" value="{{ position }}">
+                    <p class="form-field-helper">Removing this override makes this hard finding required work again.</p>
+                    <div class="form-action-area"><button class="form-action--destructive" type="submit">Remove override</button></div>
+                  </form>
+                {% else %}
+                  <p><strong>Unacknowledged hard finding.</strong> This rule remains unmet. Acknowledging the exception removes required work for this finding, but does not resolve it.</p>
+                  <form action="{% url 'session-finding-acknowledge' session_id=session.pk %}{{ return_query }}" method="post" class="form-content-stack">
+                    {% csrf_token %}
+                    <input type="hidden" name="code" value="{{ entry.code }}">
+                    <input type="hidden" name="position" value="{{ entry.position }}">
+                    <input type="hidden" name="scope" value="{{ entry.scope }}">
+                    <input type="hidden" name="editor_position" value="{{ position }}">
+                    <div class="form-field-group"><label for="exception-reason-{{ forloop.counter }}">Reason for this exception</label><textarea id="exception-reason-{{ forloop.counter }}" name="reason" rows="2" maxlength="500" required></textarea></div>
+                    <div class="form-action-area"><button type="submit">Acknowledge exception</button></div>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </section>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if not cleanup_closure %}
+    <form action="{{ form_action }}" method="post" class="assignment-form form-presentation">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+      {% include "schedules/_assignment_choice.html" %}
+      <section class="surface-frame surface-frame--raised" aria-labelledby="assignment-settings-heading">
+        <header class="surface-header"><h2 id="assignment-settings-heading">Lock and note</h2><p>Both are optional.</p></header>
+        <div class="surface-body form-content-stack">
+          {% include "schedules/_form_checkbox.html" with field=form.is_locked field_classes="assignment-lock-field" %}
+          {% include "schedules/_form_field.html" with field=form.reason helper=form.reason.help_text %}
+          <div class="form-action-area"><button type="submit">Save assignment</button><a href="{{ return_url }}">Back to schedule</a></div>
+        </div>
+      </section>
+    </form>
+
+    {% include "schedules/_assignment_alternative_details.html" %}
+  {% endif %}
+
+  {% if assignment %}
+    <section class="surface-frame surface-frame--raised surface-frame--removal surface-tone--danger assignment-removal" aria-labelledby="assignment-removal-heading">
+      <header class="surface-header"><h2 id="assignment-removal-heading">Remove assignment</h2><p>This retains the prior assignment and optional note in assignment history.</p></header>
+      <div class="surface-body"><form action="{% url 'session-assignment-remove' session_id=session.pk position=position %}{{ return_query }}" method="post" class="form-content-stack">
+        {% csrf_token %}
+        {% if remove_form.non_field_errors %}<div class="form-validation-message" role="alert">{{ remove_form.non_field_errors }}</div>{% endif %}
+        {% include "schedules/_form_field.html" with field=remove_form.reason helper=remove_form.reason.help_text %}
+        <div class="form-action-area"><button class="form-action--destructive" type="submit">Remove assignment</button></div>
+      </form></div>
+    </section>
+  {% endif %}
+  <p class="assignment-history-link"><a href="{% url 'session-assignment-history' session_id=session.pk %}{{ return_query }}">View assignment history</a></p>
+</div>
+
+{% endblock %}

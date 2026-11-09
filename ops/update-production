@@ -1,0 +1,95 @@
+#!/bin/sh
+# Reconcile and update the one production host from one exact local revision.
+set -eu
+umask 077
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+
+. "$script_dir/require-ssh-target.sh"
+ssh_target=$MURIEL_SSH_TARGET
+. "$script_dir/require-production-identity.sh"
+
+if [ -n "$(git -C "$repo_root" status --porcelain --untracked-files=all)" ]; then
+    printf '%s\n' "Production update refuses a dirty source checkout." >&2
+    exit 1
+fi
+commit=$(git -C "$repo_root" rev-parse --verify HEAD^{commit})
+case "$commit" in
+    *[!0123456789abcdef]*|???????????????????????????????????????)
+        printf '%s\n' "Production update could not identify an exact Git commit." >&2
+        exit 1
+        ;;
+esac
+
+artifact=$(mktemp "${TMPDIR:-/tmp}/muriel-${commit}.XXXXXX.tar")
+chmod 600 "$artifact"
+remote_artifact=
+remote_helper=
+
+cleanup() {
+    status=$1
+    cleanup_failed=0
+    trap - EXIT HUP INT TERM
+
+    if [ -n "$remote_artifact$remote_helper" ] && ! ssh "$ssh_target" "rm -f -- '$remote_artifact' '$remote_helper'"; then
+        printf '%s\n' "Could not remove remote production update files; they may remain at $remote_artifact $remote_helper." >&2
+        cleanup_failed=1
+    fi
+    if ! rm -f -- "$artifact"; then
+        printf '%s\n' "Could not remove local production archive; it may remain at $artifact." >&2
+        cleanup_failed=1
+    fi
+
+    [ "$status" -ne 0 ] && exit "$status"
+    [ "$cleanup_failed" -eq 0 ] || exit 1
+}
+
+trap 'cleanup "$?"' EXIT
+trap 'cleanup 129' HUP
+trap 'cleanup 130' INT
+trap 'cleanup 143' TERM
+
+git -C "$repo_root" archive --worktree-attributes --format=tar "$commit" > "$artifact"
+if tar -tf "$artifact" | grep -Eq '(^|/)(\.venv|\.env|secrets|attempts)(/|$)|(^|/)db\.sqlite3$'; then
+    printf '%s\n' "Production update artifact contains excluded development or secret material." >&2
+    exit 1
+fi
+
+printf 'Updating %s with commit %s.\n' "$1" "$commit"
+remote_candidate=$(ssh "$ssh_target" "umask 077 && mktemp --suffix=.tar /tmp/muriel-${commit}.XXXXXX")
+case "$remote_candidate" in
+    "/tmp/muriel-${commit}."[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]].tar) ;;
+    *)
+        printf '%s\n' "Production host returned an unsafe temporary archive path." >&2
+        exit 1
+        ;;
+esac
+remote_artifact=$remote_candidate
+
+scp "$artifact" "$ssh_target:$remote_artifact"
+remote_candidate=$(ssh "$ssh_target" "umask 077 && mktemp --suffix=.sh /tmp/muriel-${commit}.XXXXXX")
+case "$remote_candidate" in
+    "/tmp/muriel-${commit}."[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]].sh) ;;
+    *)
+        printf '%s\n' "Production host returned an unsafe temporary helper path." >&2
+        exit 1
+        ;;
+esac
+remote_helper=$remote_candidate
+
+ssh "$ssh_target" "set -eu
+artifact='$remote_artifact'
+helper='$remote_helper'
+[ -f \"\$artifact\" ] && [ ! -L \"\$artifact\" ] || exit 1
+[ -f \"\$helper\" ] && [ ! -L \"\$helper\" ] || exit 1
+tar -xOf \"\$artifact\" ops/update-production-remote > \"\$helper\"
+chmod 600 \"\$helper\"
+[ -s \"\$helper\" ] && [ ! -L \"\$helper\" ]"
+
+# SSH standard input remains attached to the terminal for the sudo prompt.
+ssh -tt "$ssh_target" "sudo sh '$remote_helper' '$commit' '$remote_artifact' '$primary_host' '$primary_origin' '$secondary_host' '$secondary_origin'"
+remote_helper=
+remote_artifact=
+
+printf 'Production update deployed commit %s.\n' "$commit"

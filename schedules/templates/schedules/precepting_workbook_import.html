@@ -1,0 +1,39 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load static %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="vacation-import-layout">
+    <section class="workspace-surface surface-frame surface-frame--raised" aria-labelledby="precepting-import-upload-heading">
+      <header class="surface-header"><h2 id="precepting-import-upload-heading">Upload workbook</h2><p>Scheduling Administrators only</p></header>
+      <div class="surface-body surface-content-stack">
+        <p>Upload the combined Precepting and Interview workbook. Preview explains every assignment before any schedule data changes.</p>
+        <form method="post" enctype="multipart/form-data" class="form-layout form-presentation vacation-import-form" data-processing-feedback-form>
+          {% csrf_token %}
+          {% if form.non_field_errors and not plan %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% include "schedules/_form_field.html" with field=form.workbook helper=form.workbook.help_text %}
+          <div class="form-action-area"><button type="submit" name="action" value="preview">Preview workbook</button></div>
+          <p class="form-helper">Preview never changes data. A clean preview can be applied without uploading the workbook again.</p>
+          {% include "schedules/processing_feedback.html" with processing_feedback_heading="Muriel is processing the workbook" processing_feedback_message="This may take several seconds." %}
+        </form>
+        {% if apply_form.non_field_errors and not plan %}<div class="form-validation-message" role="alert">{{ apply_form.non_field_errors }}</div>{% endif %}
+      </div>
+    </section>
+    {% if plan %}
+      <section class="workspace-surface surface-frame workspace-status {% if applied %}surface-tone--clear{% elif plan.blockers or requested_action == 'apply' %}surface-tone--danger{% else %}surface-tone--attention{% endif %}" aria-labelledby="precepting-import-status-heading">
+        <header class="surface-header"><h2 id="precepting-import-status-heading">{% if applied %}Import applied{% elif plan.blockers %}Preview found blockers{% elif requested_action == 'apply' %}Import not applied{% else %}Preview ready{% endif %}</h2><p>{{ plan.data.source_name }}</p></header>
+        <div class="surface-body surface-content-stack">
+          {% if applied %}<p>Precepting assignments, Late Docs, and Interview shifts were updated successfully. <a href="{{ return_url }}">Return to the Precepting Calendar</a>.</p>{% elif plan.blockers %}<p>No data changed. Resolve every blocker before applying this workbook.</p>{% else %}<p>No data changed. Review the combined interpretation below.</p>{% endif %}
+          <dl class="vacation-import-summary"><div><dt>Precepting</dt><dd>{{ plan.new_precepting|length }} new, {{ plan.corrected_precepting|length }} corrected, {{ plan.removed_precepting|length }} removed</dd></div><div><dt>Late Docs</dt><dd>{{ plan.late_docs|length }} dates reviewed</dd></div><div><dt>Interviews</dt><dd>{{ plan.new_interviews|length }} new, {{ plan.corrected_interviews|length }} corrected, {{ plan.removed_interviews|length }} removed</dd></div><div><dt>Names</dt><dd>{{ plan.unique_names|length }} matched, {{ plan.unmatched_names|length }} unmatched, {{ plan.ambiguous_names|length }} ambiguous</dd></div></dl>
+          {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% if apply_form.non_field_errors %}<div class="form-validation-message" role="alert">{{ apply_form.non_field_errors }}</div>{% endif %}
+          {% if plan.blockers %}<div class="vacation-import-feedback vacation-import-feedback--blockers"><h3>Blockers</h3><ul>{% for blocker in plan.blockers %}<li>{{ blocker }}</li>{% endfor %}</ul></div>{% endif %}
+          {% if preview_token and not applied %}<form method="post" class="form-layout form-presentation vacation-import-form" data-processing-feedback-form>{% csrf_token %}<input type="hidden" name="preview_token" value="{{ preview_token }}"><div class="form-action-area"><button type="submit" name="action" value="apply">Apply previewed import</button></div>{% include "schedules/processing_feedback.html" with processing_feedback_heading="Muriel is applying the previewed import" processing_feedback_message="This may take several seconds." %}</form>{% endif %}
+        </div>
+      </section>
+      <section class="workspace-surface surface-frame" aria-labelledby="precepting-import-plan-heading"><header class="surface-header"><h2 id="precepting-import-plan-heading">Precepting assignment order</h2><p>Workbook lanes and their resulting assignments</p></header><div class="surface-body"><div class="table-scroll-frame"><table class="data-table vacation-import-table"><thead><tr><th scope="col">Date</th><th scope="col">Period</th><th scope="col">Result</th><th scope="col">Assignments</th></tr></thead><tbody>{% for item in presentation.precepting %}<tr><th scope="row">{{ item.date|date:"M j, Y" }}</th><td>{{ item.period }}</td><td>{{ item.state|title }}</td><td>{% if item.assignments %}{{ item.assignments|join:", " }}{% else %}No assignments{% endif %}</td></tr>{% endfor %}</tbody></table></div></div></section>
+      <section class="workspace-surface surface-frame" aria-labelledby="precepting-import-interviews-heading"><header class="surface-header"><h2 id="precepting-import-interviews-heading">Interview and Late Doc plan</h2><p>Both domains are applied together</p></header><div class="surface-body"><div class="table-scroll-frame"><table class="data-table vacation-import-table"><thead><tr><th scope="col">Domain</th><th scope="col">Date</th><th scope="col">Result</th><th scope="col">Assignment</th></tr></thead><tbody>{% for item in presentation.late_docs %}<tr><th scope="row">Late Doc</th><td>{{ item.date|date:"M j, Y" }}</td><td>{{ item.state|title }}</td><td>{{ item.physician }}</td></tr>{% endfor %}{% for item in presentation.interviews %}<tr><th scope="row">Interview</th><td>{{ item.date|date:"M j, Y" }}</td><td>{{ item.state|title }}</td><td>{{ item.physician }}</td></tr>{% endfor %}</tbody></table></div></div></section>
+      <section class="workspace-surface surface-frame" aria-labelledby="precepting-import-names-heading"><header class="surface-header"><h2 id="precepting-import-names-heading">Name matching and ignored markers</h2><p>Unmatched and ambiguous names block application</p></header><div class="surface-body surface-content-stack">{% if presentation.names %}<ul>{% for item in presentation.names %}<li><strong>{{ item.name }}</strong> ({{ item.kind }}): {{ item.state }} - {{ item.matches }}</li>{% endfor %}</ul>{% endif %}{% if plan.data.ignored %}<details><summary>Show {{ plan.data.ignored|length }} ignored workbook markers</summary><ul>{% for item in plan.data.ignored %}<li>{{ item }}</li>{% endfor %}</ul></details>{% else %}<p>No workbook markers were ignored.</p>{% endif %}</div></section>
+    {% endif %}
+  </div>
+  <script defer src="{% static 'schedules/form-processing-feedback.js' %}"></script>
+{% endblock %}

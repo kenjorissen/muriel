@@ -1,0 +1,17 @@
+Physician,Monday AM,Monday PM,Tuesday AM,Tuesday PM,Wednesday AM,Wednesday PM,Thursday AM,Thursday PM,Friday AM,Friday PM
+Fake Faculty Doc 01,Off,Patient care,Open,Open,Open,Open,Open,Open,Off,Open
+Fake Faculty Doc 02,Off,Off,Open,Off,Off,Off,Open,Off,Open,Open
+Fake Faculty Doc 03,Open,Open,Off,Off,Patient care,Off,Open,Patient care,Open,Open
+Fake Faculty Doc 04,Off,Off,Patient care,Open,Open,Patient care,Open,Open,Open,Patient care
+Fake Faculty Doc 05,Open,Open,Off,Off,Off,Off,Open,Open,Off,Off
+Fake Faculty Doc 06,Patient care,Open,Open,Open,Patient care,Open,Open,Patient care,Patient care,Open
+Fake Faculty Doc 07,Open,Open,Rounds,Rounds,Rounds,Rounds,Open,Open,Open,Open
+Fake Faculty Doc 08,Off,Off,Off,Off,Open,Open,Open,Open,Off,Open
+Fake Faculty Doc 09,Off,Off,Open,Open,Open,Open,Open,Open,Open,Open
+Fake Faculty Doc 10,Off,Off,Open,Open,Off,Off,Off,Off,Off,Off
+Fake Faculty Doc 11,Off,Off,Open,Patient care,Patient care,Open,Open,Patient care,Open,Open
+Fake Faculty Doc 12,Off,Off,Off,Off,Open,Open,Open,Open,Off,Off
+Fake Faculty Doc 13,Patient care,Open,Off,Open,Off,Open,Open,Open,Off,Off
+Fake Faculty Doc 14,Off,Off,Rounds,Rounds,Off,Off,Off,Off,Off,Off
+Fake Faculty Doc 15,Off,Off,Off,Off,Open,Open,Open,Off,Off,Off
+Fake Faculty Doc 16,Off,Patient care,Patient care,Patient care,Patient care,Patient care,Open,Patient care,Off,Off

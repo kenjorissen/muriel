@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+. "$(dirname -- "$0")/require-ssh-target.sh"
+exec ssh -T -o BatchMode=yes "$MURIEL_SSH_TARGET" "systemctl status --no-pager muriel-staging.service"

@@ -1,0 +1,5 @@
+{% if schedule_workspace_period_navigation_academic_year %}
+  {% include "schedules/period_navigation_cluster.html" with period_navigation_label="Academic Year:" period_navigation_aria_label="Month navigation" period_navigation_period="month" period_navigation_previous_url=schedule_workspace_previous_month_url period_navigation_next_url=schedule_workspace_next_month_url period_navigation_control_template="schedules/schedule_workspace_year_picker.html" schedule_workspace_year_picker_cluster=True %}
+{% else %}
+  {% include "schedules/period_navigation_cluster.html" with period_navigation_aria_label="Month navigation" period_navigation_period="month" period_navigation_previous_url=schedule_workspace_previous_month_url period_navigation_next_url=schedule_workspace_next_month_url period_navigation_control_template="schedules/period_navigation_month_picker.html" %}
+{% endif %}

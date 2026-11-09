@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}Rounding Schedule History{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width"><a class="form-return-link" href="{{ return_url }}">Back to Rounding Schedule</a><h1 class="form-page-title">Rounding Schedule history</h1></header>
+  <section class="surface-frame surface-frame--raised"><div class="surface-body">{% include "schedules/data_table.html" with table=rounding_history_table %}</div></section>
+{% endblock %}

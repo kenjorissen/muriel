@@ -1,0 +1,8 @@
+{% extends "admin/base.html" %}
+
+{% block branding %}
+  {% if staging_environment_marker %}
+    <div class="staging-environment-marker" role="status">{{ staging_environment_marker }}</div>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

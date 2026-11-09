@@ -1,0 +1,145 @@
+{% extends "schedules/base.html" %}
+{% load static %}
+{% block title %}{{ title }} | Academic Event Schedule{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained">
+    <a class="form-return-link" href="{{ academic_event_return_url }}">Return to Academic Events</a>
+    <h1 class="form-page-title">{{ title }}</h1>
+  </header>
+  <form method="post" action="{{ form_action }}" class="academic-event-form form-layout form-presentation" data-academic-event-form{% if is_create %} data-academic-event-create-form{% endif %}>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="event-section-heading">
+      <header class="surface-header">
+        <h2 id="event-section-heading">Event</h2>
+        <p>Full name for this scheduled event.</p>
+      </header>
+      <div class="surface-body form-content-stack">
+        <input type="hidden" name="academic_year" value="{{ fixed_academic_year }}">
+        <div class="form-field-grid form-field-grid--event">
+          <div class="form-field-group form-read-only-value">
+            <span class="form-field-label">Academic year</span>
+            <span>{{ fixed_academic_year }}-{{ fixed_academic_year|add:1 }}</span>
+          </div>
+          {% if fixed_definition %}
+            {{ form.definition.as_hidden }}
+            <div class="form-field-group form-read-only-value">
+              <span class="form-field-label">Event</span>
+              <span>{{ fixed_definition.base_name }}</span>
+              {{ form.definition.errors }}
+            </div>
+            <div class="form-field-group form-read-only-value">
+              <span class="form-field-label">Typically scheduled</span>
+              <span>{{ fixed_definition.typically_scheduled|default:"Not specified" }}</span>
+            </div>
+          {% else %}
+            {% include "schedules/_form_field.html" with field=form.definition %}
+          {% endif %}
+          {% include "schedules/_form_field.html" with field=form.suffix helper=form.suffix.help_text %}
+          <div class="form-derived-preview">
+            <span id="displayed-as-label" class="form-field-label">Displayed as</span>
+            <output id="academic-event-display-preview" aria-labelledby="displayed-as-label" aria-live="polite">{{ displayed_event_title }}</output>
+          </div>
+          {% include "schedules/_form_field.html" with field=form.note field_classes="form-field-group--full" helper=form.note.help_text %}
+        </div>
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="schedule-section-heading">
+      <header class="surface-header">
+        <h2 id="schedule-section-heading">Schedule</h2>
+        <p>Dates, participation requirement, and affected coverage. Configure Precepting impact.</p>
+      </header>
+      <div class="surface-body form-content-stack">
+        <div class="form-field-grid form-field-grid--schedule">
+          {% include "schedules/_form_field.html" with field=form.start_date %}
+          {% include "schedules/_form_field.html" with field=form.end_date %}
+          {% include "schedules/_form_field.html" with field=form.required_participant_count %}
+        </div>
+        {{ additional_ranges.management_form }}
+        <div id="additional-academic-event-ranges" class="form-content-stack">
+          {% for range_form in additional_ranges %}
+            <div data-academic-event-range-entry>
+              <div class="form-field-grid form-field-grid--schedule" data-academic-event-range>
+                {% include "schedules/_form_field.html" with field=range_form.start_date %}
+                {% include "schedules/_form_field.html" with field=range_form.end_date %}
+                {% if range_form.DELETE %}<div data-academic-event-range-delete>{% include "schedules/_form_field.html" with field=range_form.DELETE %}</div>{% endif %}
+                <button type="button" data-academic-event-range-remove hidden>Remove range</button>
+              </div>
+              <div class="academic-event-range-undo" data-academic-event-range-undo hidden><button type="button" data-academic-event-range-restore>Undo removal</button></div>
+              {{ range_form.non_field_errors }}
+            </div>
+          {% endfor %}
+        </div>
+        <template id="academic-event-range-template">
+          <div data-academic-event-range-entry>
+            <div class="form-field-grid form-field-grid--schedule" data-academic-event-range>
+              {% include "schedules/_form_field.html" with field=additional_ranges.empty_form.start_date %}
+              {% include "schedules/_form_field.html" with field=additional_ranges.empty_form.end_date %}
+              {% if additional_ranges.can_delete %}<div data-academic-event-range-delete>{% include "schedules/_form_field.html" with field=additional_ranges.empty_form.DELETE %}</div>{% endif %}
+              <button type="button" data-academic-event-range-remove hidden>Remove range</button>
+            </div>
+            <div class="academic-event-range-undo" data-academic-event-range-undo hidden><button type="button" data-academic-event-range-restore>Undo removal</button></div>
+          </div>
+        </template>
+        <button type="button" id="add-academic-event-range">Add another date range</button>
+        <fieldset class="form-choice-group">
+          <legend>{{ form.period_of_day.label }}</legend>
+          <div class="form-choice-group-content">{{ form.period_of_day }}{{ form.period_of_day.errors }}</div>
+        </fieldset>
+        <fieldset class="form-choice-group">
+          <legend>{{ form.precepting_impact.label }}</legend>
+          <div class="form-choice-group-content">{{ form.precepting_impact }}{{ form.precepting_impact.errors }}</div>
+          <small class="form-helper">{{ form.precepting_impact.help_text }}</small>
+        </fieldset>
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="physicians-section-heading">
+      <header class="surface-header">
+        <h2 id="physicians-section-heading">Assigned physicians</h2>
+      </header>
+      <div class="surface-body form-content-stack">
+        <div class="academic-event-all-faculty">
+          <label for="{{ form.all_available_faculty.id_for_label }}">{{ form.all_available_faculty.label }}:</label>
+          {{ form.all_available_faculty }}
+          <small>{{ form.all_available_faculty.help_text }}</small>
+          {{ form.all_available_faculty.errors }}
+        </div>
+        {% include "schedules/physician_picker.html" with field=form.participants selection_instructions="Choose the physicians participating in this event." %}
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="notes-actions-section-heading">
+      <header class="surface-header">
+        <h2 id="notes-actions-section-heading">Actions</h2>
+      </header>
+      <div class="surface-body form-content-stack">
+        {% include "schedules/_form_field.html" with field=form.reason field_classes="form-field-group--full form-field-group--compact-note" helper=form.reason.help_text %}
+        <div class="form-action-area">
+          <button type="submit">{{ submit_label }}</button>
+          <a href="{{ academic_event_return_url }}">Return to Academic Events</a>
+        </div>
+      </div>
+    </section>
+  </form>
+  {{ event_definition_data|json_script:"academic-event-definition-data" }}<script src="{% static 'schedules/physicians-picker.js' %}" defer></script>
+  <script src="{% static 'schedules/academic-event-form.js' %}" defer></script>
+  {% if event %}
+    <section class="surface-frame surface-frame--raised surface-frame--removal surface-tone--danger" aria-labelledby="academic-event-removal-heading">
+      <header class="surface-header">
+        <h2 id="academic-event-removal-heading">Remove Academic Event</h2>
+        <p>This retains the prior event details and complete participant set in Academic Event history.</p>
+      </header>
+      <div class="surface-body">
+        <form method="post" action="{{ remove_action }}" class="form-content-stack">
+          {% csrf_token %}
+          {% if remove_form %}
+            {% if remove_form.non_field_errors %}<div class="form-validation-message" role="alert">{{ remove_form.non_field_errors }}</div>{% endif %}
+            {% include "schedules/_form_field.html" with field=remove_form.reason helper=remove_form.reason.help_text %}
+          {% else %}
+            <div class="form-field-group"><label for="remove-reason">History note (optional)</label><textarea id="remove-reason" name="reason"></textarea><small>Recorded with this change in history.</small></div>
+          {% endif %}
+          <div class="form-action-area"><button class="form-action--destructive" type="submit">Remove Academic Event</button></div>
+        </form>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

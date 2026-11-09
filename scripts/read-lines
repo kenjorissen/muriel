@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    echo "usage: $0 FILE [START_LINE [END_LINE]]" >&2
+    exit 2
+}
+
+if (( $# < 1 || $# > 3 )); then
+    usage
+fi
+
+requested_path=$1
+start_line=${2:-1}
+end_line=${3:-}
+
+if [[ ! $start_line =~ ^[1-9][0-9]*$ ]]; then
+    echo "START_LINE must be a positive integer" >&2
+    exit 2
+fi
+
+if [[ -n $end_line ]]; then
+    if [[ ! $end_line =~ ^[1-9][0-9]*$ ]]; then
+        echo "END_LINE must be a positive integer" >&2
+        exit 2
+    fi
+    if (( end_line < start_line )); then
+        echo "END_LINE must be greater than or equal to START_LINE" >&2
+        exit 2
+    fi
+fi
+
+repository_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+
+if [[ $requested_path = /* ]]; then
+    candidate_path=$requested_path
+else
+    candidate_path=$repository_root/$requested_path
+fi
+
+if [[ ! -f $candidate_path ]]; then
+    echo "FILE must name an existing regular file" >&2
+    exit 2
+fi
+
+resolved_path=$(realpath -e -- "$candidate_path")
+case "$resolved_path" in
+    "$repository_root"/*) ;;
+    *)
+        echo "FILE must resolve inside the repository" >&2
+        exit 2
+        ;;
+esac
+
+if [[ -n $end_line ]]; then
+    exec sed -n "${start_line},${end_line}p" -- "$resolved_path"
+fi
+
+exec sed -n "${start_line},\$p" -- "$resolved_path"

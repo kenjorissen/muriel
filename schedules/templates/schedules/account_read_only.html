@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ account.username }} | Accounts{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a class="form-return-link" href="{% url 'account-workspace' %}">Return to Account Administration</a><h1 class="form-page-title">{{ account.username }}</h1></header>
+  <section class="surface-frame surface-frame--raised" aria-labelledby="account-read-only-heading"><header class="surface-header"><h2 id="account-read-only-heading">Django administrator account</h2></header><div class="surface-body surface-content-stack"><p>This account is read-only here. Django Admin owns administrator authority, credentials, and account changes.</p></div></section>
+{% endblock %}

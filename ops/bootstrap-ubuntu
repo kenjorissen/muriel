@@ -1,0 +1,736 @@
+#!/bin/sh
+# Prepare only the host-owned prerequisites for a Muriel deployment.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+mode=
+root=/
+
+usage() {
+    printf '%s\n' "Usage: sudo $0 [--instance production|staging] --check|--apply [--root DIRECTORY]" >&2
+    exit 2
+}
+
+if [ "${1:-}" = --instance ]; then
+    [ "$#" -ge 2 ] || usage
+    instance=$2
+    shift 2
+    case "$instance" in
+        production) ;;
+        staging) exec "$script_dir/bootstrap-staging-ubuntu" "$@" ;;
+        *)
+            printf '%s\n' "Unknown Muriel instance: $instance. The supported instances are production and staging." >&2
+            exit 2
+            ;;
+    esac
+fi
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --check|--dry-run)
+            [ -z "$mode" ] || usage
+            mode=check
+            ;;
+        --apply)
+            [ -z "$mode" ] || usage
+            mode=apply
+            ;;
+        --root)
+            [ "$#" -ge 2 ] || usage
+            root_argument=$2
+            shift
+            ;;
+        *) usage ;;
+    esac
+    shift
+done
+
+[ -n "$mode" ] || usage
+
+. "$script_dir/require-production-identity.sh"
+
+if [ -n "${root_argument:-}" ]; then
+    case "$root_argument" in
+        /*) ;;
+        *)
+            printf '%s\n' "--root must be an absolute directory." >&2
+            exit 2
+            ;;
+    esac
+    if [ ! -d "$root_argument" ] || [ -L "$root_argument" ]; then
+        printf '%s\n' "--root must be an existing, non-symlink directory." >&2
+        exit 2
+    fi
+    root=$(CDPATH= cd -- "$root_argument" && pwd -P)
+fi
+
+if [ "$root" = / ] && [ "$(id -u)" -ne 0 ]; then
+    printf '%s\n' "Run this bootstrap through sudo." >&2
+    exit 1
+fi
+
+host_path() {
+    if [ "$root" = / ]; then
+        printf '%s\n' "$1"
+    else
+        printf '%s%s\n' "$root" "$1"
+    fi
+}
+
+fail() {
+    printf '%s\n' "bootstrap: $*" >&2
+    exit 1
+}
+
+report_problem() {
+    printf '%s\n' "MISSING OR DIVERGENT: $*" >&2
+    problems=1
+}
+
+require_safe_path() {
+    path=$1
+    if [ "$root" = / ]; then
+        case "$path" in
+            /*) ;;
+            *) fail "refusing path outside bootstrap root: $path" ;;
+        esac
+    else
+        case "$path" in
+            "$root"|"$root"/*) ;;
+            *) fail "refusing path outside bootstrap root: $path" ;;
+        esac
+    fi
+    while [ "$path" != "$root" ]; do
+        [ ! -L "$path" ] || fail "refusing symlinked managed path: $path"
+        path=${path%/*}
+        [ -n "$path" ] || path=/
+    done
+}
+
+require_safe_parent() {
+    require_safe_path "${1%/*}"
+}
+
+is_managed_file_destination() {
+    case "$1" in
+        "$(host_path /etc/systemd/system/muriel.service)"|\
+        "$(host_path /etc/systemd/system/muriel-backup.service)"|\
+        "$(host_path /etc/systemd/system/muriel-backup.timer)"|\
+        "$(host_path /srv/muriel/deploy-release)"|\
+        "$(host_path /srv/muriel/backup-database)"|\
+        "$(host_path /srv/muriel/create-superuser)"|\
+        "$(host_path /srv/muriel/clear-production-login-access)"|\
+        "$(host_path /srv/muriel/reset-production-domain)"|\
+        "$(host_path /srv/muriel/restore-database)"|\
+        "$(host_path /etc/nginx/sites-available/muriel)"|\
+        "$(host_path /etc/nginx/snippets/muriel-proxy.conf)"|\
+        "$(host_path /etc/nginx/snippets/muriel-public-app.conf)"|\
+        "$(host_path /etc/nginx/snippets/muriel-admin-proxy.conf)") return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+require_managed_file_destination() {
+    destination=$1
+    is_managed_file_destination "$destination" || \
+        fail "refusing unmanaged file destination: $destination"
+    require_safe_path "$destination"
+    if [ -e "$destination" ] && [ ! -f "$destination" ]; then
+        fail "managed file is not a regular file: $destination"
+    fi
+}
+
+validate_managed_paths() {
+    for path in \
+        /srv/muriel \
+        /srv/muriel/releases \
+        /srv/muriel/shared \
+        /srv/muriel/shared/pip-cache \
+        /srv/muriel/shared/static \
+        /etc/muriel \
+        /var/backups/muriel \
+        /etc/nginx/tailscale \
+        /etc/nginx/tailscale/muriel.crt \
+        /etc/nginx/tailscale/muriel.key \
+        /usr/sbin/policy-rc.d; do
+        require_safe_path "$(host_path "$path")"
+    done
+    for path in \
+        /etc/systemd/system/muriel.service \
+        /etc/systemd/system/muriel-backup.service \
+        /etc/systemd/system/muriel-backup.timer \
+        /srv/muriel/deploy-release \
+        /srv/muriel/backup-database \
+        /srv/muriel/create-superuser \
+        /srv/muriel/clear-production-login-access \
+        /srv/muriel/reset-production-domain \
+        /srv/muriel/restore-database \
+        /etc/nginx/sites-available/muriel \
+        /etc/nginx/snippets/muriel-proxy.conf \
+        /etc/nginx/snippets/muriel-public-app.conf \
+        /etc/nginx/snippets/muriel-admin-proxy.conf; do
+        require_managed_file_destination "$(host_path "$path")"
+    done
+    require_safe_parent "$(host_path /etc/nginx/sites-enabled/muriel)"
+    require_safe_parent "$(host_path /etc/nginx/sites-enabled/default)"
+    require_safe_parent "$(host_path /etc/nginx/snippets/muriel-proxy.conf)"
+}
+
+preflight_existing_environment() {
+    environment_file=$(host_path /etc/muriel/environment)
+    require_safe_path "$environment_file"
+    # Absence is valid for first install and converged bootstrap alike. The
+    # operator creates this file after bootstrap; deployment checks full readiness.
+    if [ -e "$environment_file" ] || [ -L "$environment_file" ]; then
+        [ -f "$environment_file" ] && [ ! -L "$environment_file" ] || \
+            fail "production environment file must be a regular non-symlink file: $environment_file"
+        [ -r "$environment_file" ] || \
+            fail "production environment file is unreadable: $environment_file"
+        [ "$(stat -c '%U:%G:%a' "$environment_file")" = root:muriel:640 ] || \
+            fail "production environment file must be root:muriel mode 0640: $environment_file"
+        # Use the ordinary service-user shell, not a root source or a parser.
+        # Suppress configuration output: even shell errors may contain secrets.
+        runuser -u muriel -- sh -eu -c '
+            unset PRECEPTOR_PRODUCTION_ALLOWED_HOST PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN
+            unset PRECEPTOR_PRODUCTION_SECONDARY_ALLOWED_HOST PRECEPTOR_PRODUCTION_SECONDARY_CSRF_TRUSTED_ORIGIN
+            [ -r "$1" ] || exit 1
+            . "$1"
+            [ "${PRECEPTOR_PRODUCTION_ALLOWED_HOST:-}" = "$2" ] &&
+                [ "${PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN:-}" = "$3" ] &&
+                [ "${PRECEPTOR_PRODUCTION_SECONDARY_ALLOWED_HOST:-}" = "$4" ] &&
+                [ "${PRECEPTOR_PRODUCTION_SECONDARY_CSRF_TRUSTED_ORIGIN:-}" = "$5" ]
+        ' sh "$environment_file" "$primary_host" "$primary_origin" "$secondary_host" "$secondary_origin" >/dev/null 2>&1 || \
+            fail "production environment identity is missing, unreadable by muriel, or disagrees with selected identity"
+    fi
+}
+
+read_os_release() {
+    os_release=$(host_path /etc/os-release)
+    [ -f "$os_release" ] || fail "Ubuntu os-release file is missing."
+    os_id=
+    os_version=
+    while IFS='=' read -r key value; do
+        case "$key" in
+            ID) os_id=${value#\"}; os_id=${os_id%\"} ;;
+            VERSION_ID) os_version=${value#\"}; os_version=${os_version%\"} ;;
+        esac
+    done < "$os_release"
+    [ "$os_id" = ubuntu ] && [ "$os_version" = 26.04 ] || \
+        fail "this bootstrap supports Ubuntu 26.04 LTS only."
+}
+
+validate_capabilities() {
+    command -v systemctl >/dev/null 2>&1 || fail "systemctl is required."
+    systemctl --version >/dev/null 2>&1 || fail "systemd is not usable."
+    [ -d "$(host_path /run/systemd/system)" ] || fail "the systemd runtime directory is missing."
+    command -v tailscale >/dev/null 2>&1 || fail "Tailscale must be installed before bootstrap."
+    tailscale version >/dev/null 2>&1 || fail "Tailscale is not usable."
+}
+
+packages='python3.14-venv postgresql-18 postgresql-client-18 nginx openssl'
+admin_hostname=$primary_host
+admin_certificate=$(host_path /etc/nginx/tailscale/muriel.crt)
+admin_key=$(host_path /etc/nginx/tailscale/muriel.key)
+admin_renewal="Admin TLS pair requires explicit operator repair/renewal for $admin_hostname; see docs/public-edge.md#admin-certificate-renewal. Existing material will not be replaced."
+
+package_installed() {
+    dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii '
+}
+
+safe_directory() {
+    directory=$1
+    owner=$2
+    group=$3
+    permissions=$4
+    require_safe_path "$directory"
+    if [ -e "$directory" ] && [ ! -d "$directory" ]; then
+        fail "managed directory is not a directory: $directory"
+    fi
+    mkdir -p "$directory"
+    chown "$owner:$group" "$directory"
+    chmod "$permissions" "$directory"
+}
+
+directory_matches() {
+    directory=$1
+    owner=$2
+    group=$3
+    permissions=$4
+    [ -d "$directory" ] && [ ! -L "$directory" ] && \
+        [ "$(stat -c '%U:%G:%a' "$directory")" = "$owner:$group:$permissions" ]
+}
+
+managed_file_matches() {
+    source=$1
+    destination=$2
+    [ -f "$destination" ] && [ ! -L "$destination" ] && cmp -s "$source" "$destination"
+}
+
+install_managed_file() (
+    source=$1
+    destination=$2
+    owner=$3
+    group=$4
+    permissions=$5
+    require_managed_file_destination "$destination"
+    if ! managed_file_matches "$source" "$destination"; then
+        temporary=$(mktemp "$destination.tmp.XXXXXX") || \
+            fail "could not create managed file replacement: $destination"
+        trap 'rm -f "$temporary"' EXIT HUP INT TERM
+        cp "$source" "$temporary"
+        chown "$owner:$group" "$temporary"
+        chmod "$permissions" "$temporary"
+        mv -f "$temporary" "$destination"
+        temporary=
+        trap - EXIT HUP INT TERM
+    else
+        chown "$owner:$group" "$destination"
+        chmod "$permissions" "$destination"
+    fi
+)
+
+check_managed_file() {
+    source=$1
+    destination=$2
+    owner=$3
+    group=$4
+    permissions=$5
+    if ! managed_file_matches "$source" "$destination"; then
+        report_problem "managed file differs or is missing: $destination"
+    elif [ "$(stat -c '%U:%G:%a' "$destination")" != "$owner:$group:$permissions" ]; then
+        report_problem "managed file has unsafe ownership or permissions: $destination"
+    fi
+}
+
+ensure_service_identity() {
+    if ! getent group muriel >/dev/null 2>&1; then
+        groupadd --system muriel
+    fi
+    account=$(getent passwd muriel 2>/dev/null || true)
+    case "$account" in
+        '')
+            useradd --system --gid muriel --home-dir /srv/muriel --shell /usr/sbin/nologin \
+                --no-create-home muriel
+            ;;
+        *:/srv/muriel:/usr/sbin/nologin) ;;
+        *) fail "muriel service identity has an unexpected home or shell" ;;
+    esac
+    usermod --append --groups muriel www-data
+}
+
+check_service_identity() {
+    if ! getent group muriel >/dev/null 2>&1; then
+        report_problem "system group muriel is missing"
+    fi
+    account=$(getent passwd muriel 2>/dev/null || true)
+    case "$account" in
+        *:/srv/muriel:/usr/sbin/nologin) ;;
+        '') report_problem "locked-down muriel service identity is missing" ;;
+        *) report_problem "muriel service identity has an unexpected home or shell" ;;
+    esac
+    id -nG www-data 2>/dev/null | tr ' ' '\n' | grep -qx muriel || \
+        report_problem "www-data is not in the muriel socket-access group"
+}
+
+postgres_query() {
+    runuser -u postgres -- psql --cluster=18/main --host=/var/run/postgresql --port=5432 \
+        -v ON_ERROR_STOP=1 -d postgres -tAc "$1"
+}
+
+postgres_cluster_has_expected_port() {
+    while read -r version cluster port status _; do
+        [ "$version" = 18 ] && [ "$cluster" = main ] && [ "$port" = 5432 ] && \
+            [ "$status" = online ] && return 0
+    done <<EOF
+$(pg_lsclusters --no-header 2>/dev/null || true)
+EOF
+    return 1
+}
+
+postgres_connection_layout_matches() {
+    postgres_cluster_has_expected_port || return 1
+    port=$(postgres_query 'SHOW port' 2>/dev/null || true)
+    sockets=$(postgres_query 'SHOW unix_socket_directories' 2>/dev/null || true)
+    config_file=$(postgres_query 'SHOW config_file' 2>/dev/null || true)
+    [ "$port" = 5432 ] && [ "$sockets" = /var/run/postgresql ] && \
+        [ "$config_file" = /etc/postgresql/18/main/postgresql.conf ]
+}
+
+verify_postgres_connection_layout() {
+    postgres_connection_layout_matches || \
+        fail "PostgreSQL 18/main must own /var/run/postgresql port 5432; another cluster may occupy this endpoint."
+}
+
+check_postgres_connection_layout() {
+    postgres_connection_layout_matches || {
+        report_problem "PostgreSQL 18/main must own /var/run/postgresql port 5432; another cluster may occupy this endpoint"
+        return 1
+    }
+}
+
+verify_postgres_cluster() {
+    verify_postgres_connection_layout
+    version=$(postgres_query 'SHOW server_version_num' 2>/dev/null || true)
+    case "$version" in
+        18[0-9][0-9][0-9][0-9]) ;;
+        *) fail "PostgreSQL 18 main cluster is not running or has an incompatible server version." ;;
+    esac
+}
+
+ensure_database() {
+    role=$(postgres_query "SELECT rolcanlogin::text || ':' || (rolpassword IS NULL)::text || ':' || rolsuper::text || ':' || rolcreatedb::text FROM pg_authid WHERE rolname = 'muriel';")
+    case "$role" in
+        '') postgres_query 'CREATE ROLE muriel LOGIN' ;;
+        true:true:false:false) ;;
+        *) fail "PostgreSQL role muriel must be login-enabled, passwordless, non-superuser, and without CREATEDB." ;;
+    esac
+    database_owner=$(postgres_query "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'muriel';")
+    case "$database_owner" in
+        '') postgres_query 'CREATE DATABASE muriel OWNER muriel' ;;
+        muriel) ;;
+        *) fail "PostgreSQL database muriel has a different owner and will not be changed." ;;
+    esac
+}
+
+check_database() {
+    if ! package_installed postgresql-18; then
+        report_problem "PostgreSQL is not installed"
+        return
+    fi
+    check_postgres_connection_layout || return
+    version=$(postgres_query 'SHOW server_version_num' 2>/dev/null || true)
+    case "$version" in
+        18[0-9][0-9][0-9][0-9]) ;;
+        *)
+            report_problem "PostgreSQL 18 main cluster is not running or has an incompatible server version"
+            return
+            ;;
+    esac
+    role=$(postgres_query "SELECT rolcanlogin::text || ':' || (rolpassword IS NULL)::text || ':' || rolsuper::text || ':' || rolcreatedb::text FROM pg_authid WHERE rolname = 'muriel';" 2>/dev/null || true)
+    [ "$role" = true:true:false:false ] || report_problem "least-privileged PostgreSQL role muriel is missing or divergent"
+    database_owner=$(postgres_query "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'muriel';" 2>/dev/null || true)
+    [ "$database_owner" = muriel ] || report_problem "PostgreSQL database muriel is missing or has a different owner"
+}
+
+check_directories() {
+    while IFS=':' read -r path owner group permissions; do
+        directory=$(host_path "$path")
+        directory_matches "$directory" "$owner" "$group" "$permissions" || \
+            report_problem "directory is missing or has unsafe ownership: $path"
+    done <<'DIRECTORIES'
+/srv/muriel:root:muriel:750
+/srv/muriel/releases:muriel:muriel:750
+/srv/muriel/shared:muriel:muriel:750
+/srv/muriel/shared/pip-cache:muriel:muriel:700
+/srv/muriel/shared/static:muriel:www-data:750
+/etc/muriel:root:muriel:750
+/var/backups/muriel:muriel:muriel:700
+DIRECTORIES
+}
+
+apply_directories() {
+    while IFS=':' read -r path owner group permissions; do
+        safe_directory "$(host_path "$path")" "$owner" "$group" "$permissions"
+    done <<'DIRECTORIES'
+/srv/muriel:root:muriel:750
+/srv/muriel/releases:muriel:muriel:750
+/srv/muriel/shared:muriel:muriel:750
+/srv/muriel/shared/pip-cache:muriel:muriel:700
+/srv/muriel/shared/static:muriel:www-data:750
+/etc/muriel:root:muriel:750
+/var/backups/muriel:muriel:muriel:700
+DIRECTORIES
+}
+
+# Offline identity/time/key check, not external CA trust or revocation checking.
+# Trust the supplied leaf locally so no issuer download or system CA is needed.
+admin_pair_usable() (
+    cert=$1
+    key=$2
+    [ -f "$cert" ] && [ ! -L "$cert" ] && \
+        [ -f "$key" ] && [ ! -L "$key" ] || return 1
+    command -v openssl >/dev/null 2>&1 || return 1
+    openssl verify -no-CAfile -no-CApath -no-CAstore -trusted "$cert" \
+        -partial_chain -verify_hostname "$admin_hostname" "$cert" >/dev/null 2>&1 || return 1
+    openssl pkey -in "$key" -passin pass: -check -noout </dev/null >/dev/null 2>&1 || return 1
+    cert_public=$(openssl x509 -in "$cert" -pubkey -noout 2>/dev/null) || return 1
+    key_public=$(openssl pkey -in "$key" -passin pass: -pubout </dev/null 2>/dev/null) || return 1
+    [ -n "$cert_public" ] && [ "$cert_public" = "$key_public" ]
+)
+
+refuse_unusable_existing_admin_pair() {
+    if [ -e "$admin_certificate" ] || [ -e "$admin_key" ]; then
+        admin_pair_usable "$admin_certificate" "$admin_key" || fail "$admin_renewal"
+    fi
+}
+
+# Subshell owns only issuance scratch; it cannot replace the package-policy or
+# managed-file traps. Never issue into existing certificate destinations.
+provision_admin_pair() (
+    umask 077
+    scratch=$(mktemp -d "${admin_certificate%/*}/.bootstrap-cert.XXXXXX") || \
+        fail "could not allocate private Admin TLS issuance directory"
+    cleanup_admin_scratch() {
+        status=$?
+        trap - EXIT HUP INT TERM
+        if ! rm -f "$scratch/muriel.crt" "$scratch/muriel.key" || ! rmdir "$scratch"; then
+            printf '%s\n' "bootstrap: Admin TLS scratch remains at $scratch; operator cleanup required." >&2
+            [ "$status" -ne 0 ] || status=1
+        fi
+        exit "$status"
+    }
+    trap cleanup_admin_scratch EXIT
+    trap 'exit 1' HUP INT TERM
+    tailscale cert --cert-file "$scratch/muriel.crt" \
+        --key-file "$scratch/muriel.key" "$admin_hostname" || fail "Admin TLS issuance failed"
+    admin_pair_usable "$scratch/muriel.crt" "$scratch/muriel.key" || \
+        fail "issued Admin TLS pair is unusable for $admin_hostname; $admin_renewal"
+    chown root:root "$scratch/muriel.crt" "$scratch/muriel.key"
+    chmod 600 "$scratch/muriel.crt" "$scratch/muriel.key"
+    mv "$scratch/muriel.crt" "$admin_certificate"
+    mv "$scratch/muriel.key" "$admin_key"
+)
+
+check_configuration() {
+    check_managed_file "$repo_root/ops/systemd/muriel.service" \
+        "$(host_path /etc/systemd/system/muriel.service)" root root 644
+    check_managed_file "$repo_root/ops/deploy-release" \
+        "$(host_path /srv/muriel/deploy-release)" root root 755
+    check_managed_file "$repo_root/ops/backup-database" \
+        "$(host_path /srv/muriel/backup-database)" root root 755
+    check_managed_file "$repo_root/ops/create-superuser" \
+        "$(host_path /srv/muriel/create-superuser)" root root 755
+    check_managed_file "$repo_root/ops/clear-production-login-access" \
+        "$(host_path /srv/muriel/clear-production-login-access)" root root 755
+    check_managed_file "$repo_root/ops/reset-production-domain" \
+        "$(host_path /srv/muriel/reset-production-domain)" root root 755
+    check_managed_file "$repo_root/ops/restore-database" \
+        "$(host_path /srv/muriel/restore-database)" root root 755
+    check_managed_file "$repo_root/ops/systemd/muriel-backup.service" \
+        "$(host_path /etc/systemd/system/muriel-backup.service)" root root 644
+    check_managed_file "$repo_root/ops/systemd/muriel-backup.timer" \
+        "$(host_path /etc/systemd/system/muriel-backup.timer)" root root 644
+    check_managed_file "$rendered_site" \
+        "$(host_path /etc/nginx/sites-available/muriel)" root root 644
+    check_managed_file "$repo_root/ops/nginx/muriel-proxy.conf" \
+        "$(host_path /etc/nginx/snippets/muriel-proxy.conf)" root root 644
+    check_managed_file "$repo_root/ops/nginx/muriel-public-app.conf" \
+        "$(host_path /etc/nginx/snippets/muriel-public-app.conf)" root root 644
+    check_managed_file "$rendered_admin_proxy" \
+        "$(host_path /etc/nginx/snippets/muriel-admin-proxy.conf)" root root 644
+    for certificate in /etc/nginx/tailscale/muriel.crt /etc/nginx/tailscale/muriel.key; do
+        certificate=$(host_path "$certificate")
+        [ -f "$certificate" ] && [ ! -L "$certificate" ] && \
+            [ "$(stat -c '%U:%G:%a' "$certificate")" = root:root:600 ] || \
+            report_problem "Tailscale Admin TLS certificate is missing or unsafe: $certificate"
+    done
+    directory_matches "$(host_path /etc/nginx/tailscale)" root root 700 || \
+        report_problem "Admin TLS directory is missing or unsafe"
+    admin_pair_usable "$admin_certificate" "$admin_key" || \
+        report_problem "$admin_renewal (OpenSSL is required for validation.)"
+    nginx_link=$(host_path /etc/nginx/sites-enabled/muriel)
+    [ -L "$nginx_link" ] && [ "$(readlink "$nginx_link")" = ../sites-available/muriel ] || \
+        report_problem "Nginx Muriel site is missing or divergent"
+    check_stock_nginx_site
+}
+
+stock_nginx_site_link_matches() {
+    case "$(readlink "$1")" in
+        /etc/nginx/sites-available/default|../sites-available/default) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+check_stock_nginx_site() {
+    nginx_link=$(host_path /etc/nginx/sites-enabled/default)
+    if [ -e "$nginx_link" ] || [ -L "$nginx_link" ]; then
+        if [ -L "$nginx_link" ] && stock_nginx_site_link_matches "$nginx_link"; then
+            report_problem "Nginx stock default site is enabled"
+        else
+            report_problem "Nginx default site is divergent and will not be changed"
+        fi
+    fi
+}
+
+install_configuration() {
+    systemd_directory=$(host_path /etc/systemd/system)
+    nginx_available=$(host_path /etc/nginx/sites-available)
+    nginx_enabled=$(host_path /etc/nginx/sites-enabled)
+    nginx_snippets=$(host_path /etc/nginx/snippets)
+    nginx_tailscale=$(host_path /etc/nginx/tailscale)
+    require_safe_path "$systemd_directory"
+    require_safe_path "$nginx_available"
+    require_safe_path "$nginx_enabled"
+    require_safe_path "$nginx_snippets"
+    require_safe_path "$nginx_tailscale"
+    [ -d "$systemd_directory" ] || fail "systemd unit directory is missing"
+    [ -d "$nginx_available" ] && [ -d "$nginx_enabled" ] && [ -d "$nginx_snippets" ] || \
+        fail "Ubuntu Nginx site directories are missing"
+
+    install_managed_file "$repo_root/ops/systemd/muriel.service" \
+        "$systemd_directory/muriel.service" root root 644
+    install_managed_file "$repo_root/ops/deploy-release" \
+        "$(host_path /srv/muriel/deploy-release)" root root 755
+    install_managed_file "$repo_root/ops/backup-database" \
+        "$(host_path /srv/muriel/backup-database)" root root 755
+    install_managed_file "$repo_root/ops/create-superuser" \
+        "$(host_path /srv/muriel/create-superuser)" root root 755
+    install_managed_file "$repo_root/ops/clear-production-login-access" \
+        "$(host_path /srv/muriel/clear-production-login-access)" root root 755
+    install_managed_file "$repo_root/ops/reset-production-domain" \
+        "$(host_path /srv/muriel/reset-production-domain)" root root 755
+    install_managed_file "$repo_root/ops/restore-database" \
+        "$(host_path /srv/muriel/restore-database)" root root 755
+    install_managed_file "$repo_root/ops/systemd/muriel-backup.service" \
+        "$systemd_directory/muriel-backup.service" root root 644
+    install_managed_file "$repo_root/ops/systemd/muriel-backup.timer" \
+        "$systemd_directory/muriel-backup.timer" root root 644
+    install_managed_file "$rendered_site" \
+        "$nginx_available/muriel" root root 644
+    install_managed_file "$repo_root/ops/nginx/muriel-proxy.conf" \
+        "$nginx_snippets/muriel-proxy.conf" root root 644
+    install_managed_file "$repo_root/ops/nginx/muriel-public-app.conf" \
+        "$nginx_snippets/muriel-public-app.conf" root root 644
+    install_managed_file "$rendered_admin_proxy" \
+        "$nginx_snippets/muriel-admin-proxy.conf" root root 644
+
+    refuse_unusable_existing_admin_pair
+    safe_directory "$nginx_tailscale" root root 700
+    if [ ! -e "$admin_certificate" ] && [ ! -e "$admin_key" ]; then
+        provision_admin_pair
+    else
+        # Reconcile unsafe metadata only after proving the existing pair usable.
+        for certificate in "$admin_certificate" "$admin_key"; do
+            if [ "$(stat -c '%U:%G:%a' "$certificate")" != root:root:600 ]; then
+                chown root:root "$certificate"
+                chmod 600 "$certificate"
+            fi
+        done
+    fi
+
+    nginx_link="$nginx_enabled/muriel"
+    require_safe_parent "$nginx_link"
+    if [ -e "$nginx_link" ] || [ -L "$nginx_link" ]; then
+        [ -L "$nginx_link" ] && [ "$(readlink "$nginx_link")" = ../sites-available/muriel ] || \
+            fail "Nginx Muriel site link differs and will not be overwritten"
+    else
+        ln -s ../sites-available/muriel "$nginx_link"
+    fi
+    stock_nginx_link="$nginx_enabled/default"
+    require_safe_parent "$stock_nginx_link"
+    if [ -e "$stock_nginx_link" ] || [ -L "$stock_nginx_link" ]; then
+        [ -L "$stock_nginx_link" ] && stock_nginx_site_link_matches "$stock_nginx_link" || \
+            fail "Nginx default site is divergent and will not be changed"
+        rm "$stock_nginx_link"
+    fi
+    nginx -t
+    systemctl daemon-reload
+}
+
+install_packages() (
+    policy=$(host_path /usr/sbin/policy-rc.d)
+    require_safe_path "$policy"
+    [ ! -e "$policy" ] && [ ! -L "$policy" ] || \
+        fail "refusing to replace existing service-start policy: $policy"
+    mkdir -p "$(dirname "$policy")"
+    printf '%s\n' '#!/bin/sh' 'exit 101' > "$policy"
+    chmod 755 "$policy"
+    trap 'rm -f "$policy"' EXIT HUP INT TERM
+    DEBIAN_FRONTEND=noninteractive apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends $packages
+    rm -f "$policy"
+    trap - EXIT HUP INT TERM
+)
+
+report_muriel_service_state() {
+    enabled=$(systemctl is-enabled muriel.service 2>/dev/null || true)
+    active=$(systemctl is-active muriel.service 2>/dev/null || true)
+    case "$enabled:$active" in
+        enabled:active)
+            printf '%s\n' "Muriel is enabled and active. Bootstrap did not activate an application release or reload Nginx."
+            ;;
+        *)
+            printf '%s\n' "Muriel is ${enabled:-not enabled} and ${active:-not active}. Bootstrap did not activate an application release or reload Nginx; deploy a release before enabling Muriel."
+            ;;
+    esac
+}
+
+read_os_release
+validate_capabilities
+validate_managed_paths
+preflight_existing_environment
+
+# This invocation owns rendering scratch. File/package/issuance traps live in
+# subshells and cannot disarm this cleanup. Nothing under the host root is changed.
+render_directory=$(mktemp -d "${TMPDIR:-/tmp}/muriel-nginx.XXXXXX") || fail "could not allocate Nginx rendering scratch"
+rendered_site=$render_directory/muriel.conf
+rendered_admin_proxy=$render_directory/muriel-admin-proxy.conf
+cleanup_rendering() {
+    status=$?
+    trap - EXIT HUP INT TERM
+    if ! rm -f "$rendered_site" "$rendered_admin_proxy" || ! rmdir "$render_directory"; then
+        printf '%s\n' "bootstrap: Nginx rendering scratch remains at $render_directory; operator cleanup required." >&2
+        [ "$status" -ne 0 ] || status=1
+    fi
+    exit "$status"
+}
+trap cleanup_rendering EXIT
+trap 'exit 1' HUP INT TERM
+# Only these named markers are substituted. Nginx runtime variables are untouched.
+(
+    umask 077
+    awk -v primary="$primary_host" -v secondary="$secondary_host" '
+        {
+            primary_count += gsub(/@PRODUCTION_PRIMARY_HOST@/, primary)
+            secondary_count += gsub(/@PRODUCTION_SECONDARY_HOST@/, secondary)
+            print
+        }
+        END { if (primary_count != 2 || secondary_count != 1) exit 1 }
+    ' "$repo_root/ops/nginx/muriel.conf" > "$rendered_site" &&
+    awk -v primary="$primary_host" '
+        { count += gsub(/@PRODUCTION_PRIMARY_HOST@/, primary); print }
+        END { if (count != 1) exit 1 }
+    ' "$repo_root/ops/nginx/muriel-admin-proxy.conf" > "$rendered_admin_proxy"
+) || fail "could not render Nginx production identity"
+if grep -q '@[A-Z_]*@' "$rendered_site" "$rendered_admin_proxy"; then
+    fail "unresolved Nginx identity marker"
+fi
+problems=0
+
+for package in $packages; do
+    package_installed "$package" || report_problem "OS package is missing: $package"
+done
+check_service_identity
+check_directories
+check_configuration
+check_database
+
+if [ "$mode" = check ]; then
+    [ "$problems" -eq 0 ] || exit 1
+    printf '%s\n' "Muriel host bootstrap prerequisites match the repository configuration."
+    exit 0
+fi
+
+if [ "$problems" -ne 0 ]; then
+    printf '%s\n' "Applying the Muriel host bootstrap prerequisites reported above." >&2
+fi
+
+packages_missing=0
+for package in $packages; do
+    package_installed "$package" || packages_missing=1
+done
+if [ "$packages_missing" -eq 1 ]; then
+    install_packages
+fi
+
+command -v openssl >/dev/null 2>&1 || fail "OpenSSL is required for Admin TLS validation."
+refuse_unusable_existing_admin_pair
+ensure_service_identity
+apply_directories
+systemctl enable --now postgresql@18-main
+verify_postgres_cluster
+ensure_database
+install_configuration
+
+report_muriel_service_state

@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Probe the local Funnel and Cloudflare origins with bounded requests."""
+
+import argparse
+import os
+import re
+import secrets
+import socket
+import struct
+from functools import partial
+
+SOURCE_ADDRESS = f"198.18.{secrets.randbelow(256)}.{secrets.randbelow(254) + 1}"
+SENSITIVE_BURST = 5
+
+
+def configured_hosts():
+    """Capture the two nonsecret identities, never socket destinations."""
+    environment = dict(os.environ)
+    hosts = []
+    for prefix in ("PRECEPTOR_PRODUCTION", "PRECEPTOR_PRODUCTION_SECONDARY"):
+        host_setting = f"{prefix}_ALLOWED_HOST"
+        origin_setting = f"{prefix}_CSRF_TRUSTED_ORIGIN"
+        host = environment.get(host_setting, "")
+        # Exact ASCII DNS labels exclude all HTTP header and URL delimiters.
+        if (
+            not host
+            or len(host) > 253
+            or not all(
+                re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                for label in host.split(".")
+            )
+        ):
+            raise RuntimeError(f"{host_setting} must be one exact hostname")
+        if environment.get(origin_setting) != f"https://{host}":
+            raise RuntimeError(
+                f"{origin_setting} must be the exact https:// origin of {host_setting}"
+            )
+        hosts.append(host)
+    if hosts[0].lower() == hosts[1].lower():
+        raise RuntimeError("primary and secondary public-edge hostnames must be distinct")
+    return hosts
+
+
+def response(path, *, host, timeout):
+    preamble = b"\r\n\r\n\x00\r\nQUIT\n" + bytes((0x21, 0x11))
+    preamble += struct.pack("!H", 12)
+    preamble += socket.inet_aton(SOURCE_ADDRESS) + socket.inet_aton("127.0.0.1")
+    preamble += struct.pack("!HH", 54321, 8080)
+    payload = f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode()
+    with socket.create_connection(("127.0.0.1", 8080), timeout=timeout) as connection:
+        connection.settimeout(timeout)
+        connection.sendall(preamble + payload)
+        chunks = []
+        while chunk := connection.recv(65536):
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def cloudflare_response(path, *, host, timeout):
+    payload = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        f"CF-Connecting-IP: {SOURCE_ADDRESS}\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode()
+    with socket.create_connection(("127.0.0.1", 8083), timeout=timeout) as connection:
+        connection.settimeout(timeout)
+        connection.sendall(payload)
+        chunks = []
+        while chunk := connection.recv(65536):
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def request(path, *, timeout, responder):
+    raw_response = responder(path, timeout=timeout)
+    try:
+        return int(raw_response.split(b" ", 2)[1])
+    except (IndexError, ValueError) as error:
+        raise RuntimeError(f"{path}: malformed HTTP response") from error
+
+
+def expect(path, statuses, *, timeout, responder):
+    status = request(path, timeout=timeout, responder=responder)
+    if status not in statuses:
+        raise RuntimeError(f"{path}: expected {sorted(statuses)}, received {status}")
+
+
+def rendered_stylesheet_path(*, timeout, responder):
+    raw_response = responder("/sign-in/", timeout=timeout)
+    try:
+        status, body = raw_response.split(b"\r\n\r\n", 1)
+        status_code = int(status.split(b" ", 2)[1])
+    except (IndexError, ValueError) as error:
+        raise RuntimeError("/sign-in/: malformed HTTP response") from error
+    if status_code != 200:
+        raise RuntimeError(f"/sign-in/: expected [200], received {status_code}")
+    match = re.search(rb'<link rel="stylesheet" href="([^"]+)">', body)
+    if not match:
+        raise RuntimeError("/sign-in/: missing stylesheet URL")
+    return match.group(1).decode("ascii")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--timeout", type=float, default=5)
+    arguments = parser.parse_args()
+    if not 0 < arguments.timeout <= 10:
+        parser.error("--timeout must be greater than zero and no more than 10 seconds")
+
+    try:
+        funnel_host, cloudflare_host = configured_hosts()
+        funnel = partial(response, host=funnel_host)
+        cloudflare = partial(cloudflare_response, host=cloudflare_host)
+        expect_funnel = partial(expect, timeout=arguments.timeout, responder=funnel)
+        expect_cloudflare = partial(expect, timeout=arguments.timeout, responder=cloudflare)
+        expect_funnel("/health/", {200})
+        expect_funnel(rendered_stylesheet_path(timeout=arguments.timeout, responder=funnel), {200})
+        expect_funnel("/admin/", {404})
+        expect_funnel("/.env", {403})
+        expect_cloudflare("/health/", {200})
+        expect_cloudflare("/admin/", {404})
+        expect_cloudflare("/.env", {403})
+        for _ in range(SENSITIVE_BURST):
+            expect_funnel("/sign-in/", {200})
+        expect_funnel("/sign-in/", {429})
+    except (OSError, RuntimeError) as error:
+        parser.exit(1, f"public edge probe failed: {error}\n")
+    print("Public edge probes passed.")
+
+
+if __name__ == "__main__":
+    main()

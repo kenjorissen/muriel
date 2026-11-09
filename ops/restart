@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+. "$(dirname -- "$0")/require-ssh-target.sh"
+exec ssh -tt "$MURIEL_SSH_TARGET" "sudo systemctl restart muriel && sudo systemctl is-active --quiet muriel"

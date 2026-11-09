@@ -1,0 +1,5 @@
+{% extends "schedules/base.html" %}
+{% block title %}Account ready{% endblock %}
+{% block content %}
+  <section class="panel sign-in-panel" aria-labelledby="invitation-heading"><h1 id="invitation-heading">Your account is ready</h1><p class="sign-in-introduction">Your password has been set and your account is active.</p><p class="sign-in-help"><a href="{% url 'sign-in' %}">Sign in</a></p></section>
+{% endblock %}

@@ -1,0 +1,6 @@
+<form class="period-navigation-form period-navigation-picker" action="{{ schedule_workspace_month_picker_action }}" method="get" data-calendar-period-picker>
+  {% for name, value in schedule_workspace_month_picker_preserved_query.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  <label class="visually-hidden" for="schedule-workspace-month">Choose month</label>
+  <input id="schedule-workspace-month" type="month" name="month" value="{{ schedule_workspace_selected_month|date:'Y-m' }}" min="{{ schedule_workspace_month_min|date:'Y-m' }}" max="{{ schedule_workspace_month_max|date:'Y-m' }}">
+  <noscript><button type="submit">View</button></noscript>
+</form>

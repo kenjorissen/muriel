@@ -1,0 +1,27 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load static %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <h1 class="visually-hidden">Admin Time for {{ report.month|date:"F Y" }}</h1>
+  <div class="workspace-surface-stack" aria-label="Admin Time report">
+    <section class="workspace-surface surface-frame">
+      <header class="surface-header"><h2>Admin Time</h2><p>{{ report.month|date:"F Y" }}</p></header>
+      <div class="surface-body surface-content-stack">
+        <form class="form-presentation" method="get" action="{% url 'faculty-admin-time-report' %}" data-faculty-admin-time-controls>
+          <input type="hidden" name="month" value="{{ report.month|date:'Y-m' }}">
+          <fieldset class="form-choice-group">
+            <legend>Coverage</legend>
+            <div class="form-choice-group-content"><div>{% for value, label in admin_time_coverage_choices %}<label><input type="radio" name="coverage" value="{{ value }}"{% if report.coverage == value %} checked{% endif %}> {{ label }}</label>{% endfor %}</div></div>
+          </fieldset>
+          <div class="form-action-area"><button type="submit">Update report</button></div>
+        </form>
+        <p class="form-helper">Each AM/PM period estimates four hours. Explicit schedule-option capacity starts gross; independent blockers subtract each period once, even when sources overlap. Available and Admin count alike toward Admin Time, then Precepting in either is subtracted. Total worked is all remaining explicit-option hours. Goals are planning comparisons, not retained payroll facts.</p>
+      </div>
+    </section>
+    <section class="workspace-surface surface-frame">
+      <header class="surface-header"><h2>Faculty admin time</h2><p>{{ report.included_dates|length }} included weekday{{ report.included_dates|length|pluralize }}</p></header>
+      <div class="surface-body">{% include "schedules/data_table.html" with table=admin_time_table %}</div>
+    </section>
+  </div>
+  <script defer src="{% static 'schedules/faculty-admin-time-report-controls.js' %}"></script>
+{% endblock %}

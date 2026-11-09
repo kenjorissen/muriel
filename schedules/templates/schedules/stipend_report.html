@@ -1,0 +1,13 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <h1 class="visually-hidden">{{ report_title }} for {{ report.month|date:"F Y" }}</h1>
+  <div class="workspace-surface-stack" aria-label="{{ report_title }} report">
+    {% if messages %}<section class="workspace-surface surface-frame surface-tone--attention"><div class="surface-body surface-content-stack">{% for message in messages %}<p>{{ message }}</p>{% endfor %}</div></section>{% endif %}
+    <section class="workspace-surface surface-frame"><div class="surface-body"><a href="{% if report.kind == 'community_preceptor' %}{% url 'community-preceptor-stipend-pdf' %}{% else %}{% url 'late-doc-stipend-pdf' %}{% endif %}?month={{ report.month|date:'Y-m' }}">Download PDF</a></div></section>
+    {% if report.missing_rate_dates %}<section class="workspace-surface surface-frame"><div class="surface-body surface-content-stack"><p class="finding finding-hard">Incomplete: no hourly rate is configured for {{ report.missing_rate_dates|length }} qualifying shift{{ report.missing_rate_dates|pluralize }}. Amounts and totals are unavailable until rates are configured.</p></div></section>{% endif %}
+    {% if report.missing_late_doc_dates %}<section class="workspace-surface surface-frame"><div class="surface-body surface-content-stack"><p class="finding finding-preference">Late Doc work item: no assignment is recorded for {{ report.missing_late_doc_dates|length }} Monday{{ report.missing_late_doc_dates|pluralize }}: {% for day in report.missing_late_doc_dates %}<time datetime="{{ day|date:'Y-m-d' }}">{{ day|date:"M j" }}</time>{% if not forloop.last %}, {% endif %}{% endfor %}.</p></div></section>{% endif %}
+    <section class="workspace-surface surface-frame"><header class="surface-header"><h2>Itemized shifts</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=stipend_detail_table %}</div></section>
+    <section class="workspace-surface surface-frame"><header class="surface-header"><h2>Totals</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=stipend_totals_table %}</div></section>
+  </div>
+{% endblock %}

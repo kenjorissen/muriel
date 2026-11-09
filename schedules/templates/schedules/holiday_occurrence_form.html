@@ -1,0 +1,25 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ title }} | Holidays{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a class="form-return-link" href="{{ workspace_url }}">Return to Holidays</a><h1 class="form-page-title">{{ title }}</h1></header>
+  <form method="post" action="{{ form_action }}" class="form-layout form-presentation">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="holiday-identity-heading">
+      <header class="surface-header"><h2 id="holiday-identity-heading">Holiday</h2></header>
+      <div class="surface-body form-field-grid">
+        <div class="form-field-group form-read-only-value"><span class="form-field-label">Holiday</span><span>{{ occurrence.name }}</span></div>
+        <div class="form-field-group form-read-only-value"><span class="form-field-label">Nominal date</span><span>{{ occurrence.nominal_date|date:'M j, Y' }}</span></div>
+        <div class="form-field-group form-read-only-value"><span class="form-field-label">Affected coverage</span><span>{{ occurrence.get_coverage_display }}</span></div>
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="holiday-schedule-heading">
+      <header class="surface-header"><h2 id="holiday-schedule-heading">Observed date</h2></header>
+      <div class="surface-body form-content-stack">{% include "schedules/_form_field.html" with field=form.observed_date %}</div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="holiday-notes-heading">
+      <header class="surface-header"><h2 id="holiday-notes-heading">Actions</h2></header>
+      <div class="surface-body form-content-stack">{% include "schedules/_form_field.html" with field=form.note helper=form.note.help_text %}<div class="form-action-area"><button type="submit">{{ submit_label }}</button><a href="{{ workspace_url }}">Return to Holidays</a></div></div>
+    </section>
+  </form>
+{% endblock %}

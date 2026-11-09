@@ -1,0 +1,89 @@
+{% extends "schedules/base.html" %}
+{% load static %}
+{% block title %}{{ physician.display_name }}{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained">
+    <a class="form-return-link" href="{% url 'physicians-directory' %}">Return to Physicians</a>
+    <h1 class="form-page-title">{{ physician.display_name }}</h1>
+  </header>
+  <div class="surface-stack" aria-label="Physician details">
+  <section class="surface-frame surface-frame--raised physician-detail-section" aria-labelledby="account-heading">
+    <header class="surface-header"><h2 id="account-heading">Muriel Login Account</h2></header>
+    <div class="surface-body surface-content-stack">{% if physician.user %}<p>Official email: <strong>{{ physician.user.email }}</strong></p><p>Username: {{ physician.user.get_username }}. Account is {% if physician.user.is_active %}active{% else %}inactive{% endif %}.</p>{% else %}<p>No account linked.</p>{% endif %}</div>
+    {% if can_manage_scheduling_administration %}<form method="post" class="physician-identity-form physicians-fact-form form-layout form-presentation"><div class="surface-body form-content-stack">
+      {% csrf_token %}<input type="hidden" name="action" value="account">
+      {{ account_form.non_field_errors }}
+      {% include "schedules/_form_field.html" with field=account_form.user helper=account_form.user.help_text %}
+      {% include "schedules/_form_field.html" with field=account_form.reason field_classes="form-field-group--compact-note" compact_helper=account_form.reason.help_text %}
+      <div class="form-action-area"><button type="submit">Update linked account</button></div>
+    </div></form>{% endif %}
+  </section>
+  <section class="surface-frame surface-frame--raised physician-detail-section" aria-labelledby="faculty-capacity-heading">
+    <header class="surface-header"><h2 id="faculty-capacity-heading">Faculty Precepting capacity</h2></header>
+    <div class="surface-body surface-content-stack">
+      <p>Schedule-derived capacity for this Monday–Friday week: <strong>{{ schedule_derived_faculty_capacity }}</strong> shifts.</p>
+      <p>Current effective capacity: <strong>{{ effective_faculty_capacity }}</strong> shifts.</p>
+      <p>This current setting applies to the whole balance window of a new solve; it is not effective-dated.</p>
+    </div>
+    {% if can_manage_scheduling_administration %}<form method="post" class="physicians-fact-form form-layout form-presentation"><div class="surface-body form-content-stack">
+      {% csrf_token %}<input type="hidden" name="action" value="capacity_override">
+      {{ capacity_override_form.non_field_errors }}
+      <div class="faculty-capacity-override-control" data-capacity-override-control>
+        <span class="faculty-capacity-override-control-label">Override</span>
+        <label class="faculty-capacity-override-control-toggle" for="{{ capacity_override_form.use_override.id_for_label }}">{{ capacity_override_form.use_override }}<span class="visually-hidden">{{ capacity_override_form.use_override.label }}</span></label>
+        <label class="faculty-capacity-override-control-value" for="{{ capacity_override_form.capacity_override.id_for_label }}"><span class="visually-hidden">{{ capacity_override_form.capacity_override.label }}</span>{{ capacity_override_form.capacity_override }}</label>
+        {{ capacity_override_form.capacity_override.errors }}
+      </div>
+      <small id="{{ capacity_override_form.capacity_override.auto_id }}_helptext" class="form-helper">{{ capacity_override_form.capacity_override.help_text }}</small>
+      {% include "schedules/_form_field.html" with field=capacity_override_form.reason field_classes="form-field-group--compact-note" compact_helper=capacity_override_form.reason.help_text %}
+      <div class="form-action-area"><button type="submit">Update capacity</button></div>
+    </div></form>{% endif %}
+  </section>
+  {% if can_manage_scheduling_administration %}<form method="post" class="physician-identity-form physicians-fact-form form-layout form-presentation">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="identity">
+    <section class="surface-frame surface-frame--raised" aria-labelledby="identity-heading">
+      <header class="surface-header"><h2 id="identity-heading">Identity</h2></header>
+      <div class="surface-body form-content-stack">
+        {% include "schedules/_form_field.html" with field=identity_form.display_name %}
+        {% include "schedules/_form_field.html" with field=identity_form.reason field_classes="form-field-group--compact-note" compact_helper=identity_form.reason.help_text %}
+        <div class="form-action-area"><button type="submit">Update identity</button><a href="{% url 'physician-history' physician.pk %}">View change history</a></div>
+      </div>
+    </section>
+  </form>{% endif %}
+    <section class="surface-frame surface-frame--raised physician-detail-section" aria-labelledby="roles-heading">
+      <header class="surface-header physician-detail-section-header"><h2 id="roles-heading">Roles</h2>{% if can_manage_scheduling_administration %}<p class="toolbar"><a href="{% url 'physician-role-add' physician.pk %}">Add role</a></p>{% endif %}</header>
+      <div class="surface-body">{% include "schedules/data_table.html" with table=physician_roles_table %}</div>
+    </section>
+    {% if has_schedule_inputs or has_schedule_input_history %}
+      <section class="surface-frame surface-frame--raised physician-detail-section" aria-labelledby="faculty-schedule-heading">
+        <header class="surface-header physician-detail-section-header"><h2 id="faculty-schedule-heading">{% if community_float_schedule_inputs %}Float availability{% else %}Faculty Schedule{% endif %}</h2>{% if has_schedule_inputs %}<p class="toolbar"><a href="{% url 'physician-faculty-availability-add' physician.pk %}">Add weekly template</a></p>{% endif %}</header>
+        {% if community_float_schedule_inputs %}<div class="surface-body"><p>These templates add Float availability only. Off does not change Community Preceptor recurrence commitments.</p></div>{% endif %}
+        <div class="surface-body">{% include "schedules/data_table.html" with table=faculty_availability_templates_table %}</div>
+      </section>
+      <section class="surface-frame surface-frame--raised physician-detail-section" aria-labelledby="monthly-scheduling-rules-heading">
+        <header class="surface-header physician-detail-section-header"><h2 id="monthly-scheduling-rules-heading">Monthly scheduling rules</h2>{% if has_schedule_inputs %}<p class="toolbar"><a href="{% url 'physician-monthly-availability-rule-create' physician.pk %}">Add monthly scheduling rule</a></p>{% endif %}</header>
+        {% if community_float_schedule_inputs %}<div class="surface-body"><p>Monthly Float rules are additive and cannot remove a Community Preceptor commitment.</p></div>{% endif %}
+        <div class="surface-body">{% include "schedules/data_table.html" with table=monthly_availability_rules_table %}</div>
+      </section>
+    {% endif %}
+    {% if has_community_preceptor_role %}
+      <section class="surface-frame surface-frame--raised physician-detail-section" aria-labelledby="community-preceptor-schedule-heading">
+        <header class="surface-header physician-detail-section-header"><h2 id="community-preceptor-schedule-heading">Community Preceptor Schedule</h2><p class="toolbar"><a href="{% url 'physician-community-preceptor-rule-create' physician.pk %}">Add rule</a></p></header>
+        <div class="surface-body">{% include "schedules/data_table.html" with table=physician_community_preceptor_rules_table %}</div>
+      </section>
+    {% endif %}
+    {% if has_casual_rounder_role %}
+      <section class="surface-frame surface-frame--raised physician-detail-section" aria-labelledby="casual-rounder-rules-heading">
+        <header class="surface-header physician-detail-section-header"><h2 id="casual-rounder-rules-heading">Casual Rounder rules</h2><p class="toolbar"><a href="{% url 'physician-casual-rounder-rule-create' physician.pk %}">Add rule</a></p></header>
+        <div class="surface-body">{% include "schedules/data_table.html" with table=physician_casual_rounder_rules_table %}</div>
+      </section>
+    {% endif %}
+    <section class="surface-frame surface-frame--raised physician-detail-section" aria-labelledby="scheduling-status-heading">
+      <header class="surface-header"><h2 id="scheduling-status-heading">Scheduling status</h2></header>
+      <div class="surface-body"><form class="compact-filter-form" method="get" data-period-picker-form><div class="compact-control-field"><label for="date">Effective date</label><input id="date" name="date" type="date" value="{{ selected_date|date:'Y-m-d' }}" data-period-picker-input></div><button type="submit" data-period-picker-submit>Check date</button></form><p>Effective roles: {% if effective_role_labels %}{{ effective_role_labels|join:", " }}{% else %}None{% endif %}</p><p>Ordinarily eligible to precept: <span class="{% if status.ordinarily_eligible_to_precept %}yes{% else %}no{% endif %}">{% if status.ordinarily_eligible_to_precept %}Yes{% else %}No{% endif %}</span>{% if status.preceptor_reason %} ({{ status.preceptor_reason }}){% endif %}</p><p>Faculty-equivalent: <span class="{% if status.faculty_equivalent %}yes{% else %}no{% endif %}">{% if status.faculty_equivalent %}Yes{% else %}No{% endif %}</span>{% if status.faculty_equivalent_reason %} ({{ status.faculty_equivalent_reason }}){% endif %}</p>{% for availability in effective_availability %}<hr><h3>{{ availability.period_of_day }} effective availability</h3><p>Category: <strong>{{ availability.effective_category_display }}</strong></p><p>Base availability: <strong>{{ availability.base_availability_display }}</strong></p><p>Final availability: <strong>{{ availability.availability_display }}</strong></p>{% if availability.is_expected_community_commitment %}<p class="yes">Expected Community Preceptor commitment{% if availability.expected_but_blocked %}, currently blocked{% endif %}.</p>{% endif %}<p>Sources: {% for source in availability.sources %}{{ source.label }} ({{ source.reason }}){% if not forloop.last %}; {% endif %}{% empty %}No applicable source facts.{% endfor %}</p>{% endfor %}</div>
+    </section>
+  </div>
+  <script defer src="{% static 'schedules/period-picker.js' %}"></script>
+  <script defer src="{% static 'schedules/capacity-override-control.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Request unavailable{% endblock %} | Muriel</title>
+  <link rel="stylesheet" href="{% static 'schedules/application.css' %}">
+</head>
+<body>
+  <main class="shell page-content">
+    <section class="panel sign-in-panel" aria-labelledby="error-heading">
+      <h1 id="error-heading">{% block heading %}{% endblock %}</h1>
+      <p class="sign-in-introduction">{% block message %}{% endblock %}</p>
+      <p class="sign-in-help"><a href="{% url 'sign-in' %}">Sign in</a></p>
+    </section>
+  </main>
+</body>
+</html>

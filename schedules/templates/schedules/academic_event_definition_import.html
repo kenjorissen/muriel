@@ -1,0 +1,46 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load static %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="vacation-import-layout">
+    <section class="workspace-surface surface-frame surface-frame--raised" aria-labelledby="definition-import-upload-heading">
+      <header class="surface-header"><h2 id="definition-import-upload-heading">Upload workbook</h2><p>Scheduling Administrators only</p></header>
+      <div class="surface-body surface-content-stack">
+        <p>Upload the clinic Academic Year Calendar. This stage establishes reusable event definitions; importing dated annual schedules is the next step.</p>
+        <form method="post" enctype="multipart/form-data" class="form-layout form-presentation vacation-import-form" data-processing-feedback-form>
+          {% csrf_token %}
+          {% if form.non_field_errors and not plan %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% include "schedules/_form_field.html" with field=form.workbook helper=form.workbook.help_text %}
+          <div class="form-action-area"><button type="submit" name="action" value="preview">Preview workbook</button></div>
+          <p class="form-helper">Preview the workbook, then apply its reviewed import without uploading the file again.</p>
+          {% include "schedules/processing_feedback.html" with processing_feedback_heading="Muriel is processing the workbook" processing_feedback_message="This may take several seconds." %}
+        </form>
+        {% if apply_form.non_field_errors and not plan %}<div class="form-validation-message" role="alert">{{ apply_form.non_field_errors }}</div>{% endif %}
+      </div>
+    </section>
+    {% if plan %}
+      <section class="workspace-surface surface-frame workspace-status {% if applied %}surface-tone--clear{% elif plan.blockers or requested_action == 'apply' %}surface-tone--danger{% else %}surface-tone--attention{% endif %}" aria-labelledby="definition-import-status-heading">
+        <header class="surface-header"><h2 id="definition-import-status-heading">{% if applied %}Import applied{% elif plan.blockers %}Preview found conflicts{% elif requested_action == 'apply' %}Import not applied{% else %}Preview ready{% endif %}</h2><p>{{ plan.data.source_name }}</p></header>
+        <div class="surface-body surface-content-stack">
+          {% if applied %}<p>Missing definitions were created with normal retained history.</p>{% elif plan.blockers %}<p>No data changed. Resolve every conflict before applying this workbook.</p>{% else %}<p>No data changed. Existing definitions remain unchanged; review the interpretation and planned creations below.</p>{% endif %}
+          <dl class="vacation-import-summary"><div><dt>Academic year</dt><dd>{{ plan.data.academic_year }}-{{ plan.data.academic_year|add:1 }}</dd></div><div><dt>Definition plan</dt><dd>{{ plan.exact|length }} exact, {{ plan.different|length }} different, {{ plan.create|length }} new</dd></div><div><dt>Recurrence-rule plan</dt><dd>{{ plan.rule_exact|length }} exact, {{ plan.rule_different|length }} different, {{ plan.rule_create|length }} new</dd></div><div><dt>Reported, not imported</dt><dd>{{ plan.data.unsupported|length }} unsupported</dd></div><div><dt>Conflicts</dt><dd>{{ plan.conflict_count }}</dd></div></dl>
+          {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% if apply_form.non_field_errors %}<div class="form-validation-message" role="alert">{{ apply_form.non_field_errors }}</div>{% endif %}
+          {% if preview_token and not applied %}
+            <form method="post" class="form-layout form-presentation vacation-import-form" data-processing-feedback-form>
+              {% csrf_token %}
+              <input type="hidden" name="preview_token" value="{{ preview_token }}">
+              <div class="form-action-area"><button type="submit" name="action" value="apply">Apply previewed import</button></div>
+              {% include "schedules/processing_feedback.html" with processing_feedback_heading="Muriel is applying the previewed import" processing_feedback_message="This may take several seconds." %}
+            </form>
+          {% endif %}
+        </div>
+      </section>
+      <section class="workspace-surface surface-frame" aria-labelledby="definition-import-rows-heading">
+        <header class="surface-header"><h2 id="definition-import-rows-heading">Definition plan</h2><p>Rows are interpreted before any definition changes</p></header>
+        <div class="surface-body"><div class="table-scroll-frame"><table class="data-table vacation-import-table"><thead><tr><th scope="col">Result</th><th scope="col">Item</th><th scope="col">Workbook row</th><th scope="col">Event</th><th scope="col">Quarter</th><th scope="col">Default duration</th><th scope="col">Typically scheduled</th><th scope="col">Detail</th></tr></thead><tbody>{% for item in presentation.exact %}<tr><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.different %}<tr class="vacation-import-operation--create"><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.create %}<tr class="vacation-import-operation--create"><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.conflicts %}<tr class="vacation-import-operation--remove"><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.rule_exact %}<tr><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.rule_different %}<tr class="vacation-import-operation--create"><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.rule_create %}<tr class="vacation-import-operation--create"><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.rule_conflicts %}<tr class="vacation-import-operation--remove"><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.unsupported %}<tr><td>{{ item.action }}</td><td>{{ item.item_type }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.expected_quarter }}</td><td>{{ item.duration_days }} day{{ item.duration_days|pluralize }}</td><td>{{ item.typically_scheduled }}</td><td>{{ item.detail }}</td></tr>{% endfor %}</tbody></table></div></div>
+      </section>
+    {% endif %}
+  </div>
+  <script defer src="{% static 'schedules/form-processing-feedback.js' %}"></script>
+{% endblock %}

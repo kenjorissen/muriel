@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+if ! git_common_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    printf '%s\n' "Unable to determine the shared Git common directory for $repo_root." >&2
+    exit 1
+fi
+if ! main_root=$(CDPATH= cd -- "$git_common_dir/.." && pwd -P); then
+    printf '%s\n' "Unable to determine the shared main repository root from $git_common_dir." >&2
+    exit 1
+fi
+
+ruff="$main_root/.venv/bin/ruff"
+if [ ! -x "$ruff" ]; then
+    printf '%s\n' "Ruff is not installed. Install development dependencies with $main_root/.venv/bin/python -m pip install -r $repo_root/requirements-dev.txt." >&2
+    exit 1
+fi
+
+cd "$repo_root"
+"$ruff" check --fix .
+"$ruff" format .

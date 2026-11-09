@@ -1,0 +1,50 @@
+{% extends "schedules/base.html" %}
+{% load static %}
+{% block title %}{{ title }} | {{ physician.display_name }}{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained">
+    <a class="form-return-link" href="{% url 'physician-detail' physician.pk %}">Return to {{ physician.display_name }}</a>
+    <h1 class="form-page-title">{{ title }}</h1>
+  </header>
+  <form method="post" class="physicians-fact-form form-layout form-presentation"{% if form.role %} data-role-attributes{% endif %}>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    {% if form.role %}
+      <section class="surface-frame surface-frame--raised">
+        <div class="surface-body form-content-stack">
+          {% include "schedules/_form_field.html" with field=form.role %}
+          {% include "schedules/_form_checkbox.html" with field=form.faculty_equivalent role_attribute="faculty-equivalent" %}
+          {% include "schedules/_form_field.html" with field=form.faculty_leadership role_attribute="faculty-leadership" %}
+        </div>
+      </section>
+    {% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="effective-range-section-heading">
+      <header class="surface-header">
+        <h2 id="effective-range-section-heading">Effective range</h2>
+        {% if form.effective_start %}<p>Leave the end date blank to keep this fact ongoing.</p>{% endif %}
+      </header>
+      <div class="surface-body form-content-stack">
+        <div class="form-field-grid form-field-grid--effective-range">
+          {% if form.effective_start %}{% include "schedules/_form_field.html" with field=form.effective_start %}{% endif %}
+          {% include "schedules/_form_field.html" with field=form.effective_end %}
+        </div>
+      </div>
+    </section>
+    {% if existing_roles %}{% include "schedules/_existing_role_context.html" %}{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="notes-actions-section-heading">
+      <header class="surface-header">
+        <h2 id="notes-actions-section-heading">Actions</h2>
+      </header>
+      <div class="surface-body form-content-stack">
+        {% include "schedules/_form_field.html" with field=form.reason helper=form.reason.help_text %}
+        <div class="form-action-area">
+          <button type="submit">{{ title }}</button>
+          <a href="{% url 'physician-detail' physician.pk %}">Return to {{ physician.display_name }}</a>
+        </div>
+      </div>
+    </section>
+  </form>
+  {% if form.role %}
+    <script src="{% static 'schedules/role-attributes.js' %}" defer></script>
+  {% endif %}
+{% endblock %}

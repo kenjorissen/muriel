@@ -1,0 +1,46 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load static %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="vacation-import-layout">
+    <section class="workspace-surface surface-frame surface-frame--raised" aria-labelledby="schedule-import-upload-heading">
+      <header class="surface-header"><h2 id="schedule-import-upload-heading">Upload workbook</h2><p>Scheduling Administrators only</p></header>
+      <div class="surface-body surface-content-stack">
+        <p>Import explicit dated rows after their event definitions have been applied. Blank and unsupported rows do not remove existing annual schedules.</p>
+        <form method="post" enctype="multipart/form-data" class="form-layout form-presentation vacation-import-form" data-processing-feedback-form>
+          {% csrf_token %}
+          {% if form.non_field_errors and not plan %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% include "schedules/_form_field.html" with field=form.workbook helper=form.workbook.help_text %}
+          <div class="form-action-area"><button type="submit" name="action" value="preview">Preview workbook</button></div>
+          <p class="form-helper">Preview the workbook, then apply its reviewed import without uploading the file again.</p>
+          {% include "schedules/processing_feedback.html" with processing_feedback_heading="Muriel is processing the workbook" processing_feedback_message="This may take several seconds." %}
+        </form>
+        {% if apply_form.non_field_errors and not plan %}<div class="form-validation-message" role="alert">{{ apply_form.non_field_errors }}</div>{% endif %}
+      </div>
+    </section>
+    {% if plan %}
+      <section class="workspace-surface surface-frame workspace-status {% if applied %}surface-tone--clear{% elif plan.blockers or requested_action == 'apply' %}surface-tone--danger{% else %}surface-tone--attention{% endif %}" aria-labelledby="schedule-import-status-heading">
+        <header class="surface-header"><h2 id="schedule-import-status-heading">{% if applied %}Import applied{% elif plan.blockers %}Preview found blockers{% elif requested_action == 'apply' %}Import not applied{% else %}Preview ready{% endif %}</h2><p>{{ plan.data.source_name }}</p></header>
+        <div class="surface-body surface-content-stack">
+          {% if applied %}<p>New and corrected annual occurrences use normal retained history.</p>{% elif plan.blockers %}<p>No data changed. Apply pending definitions and resolve every named-Faculty or row blocker before applying.</p>{% else %}<p>No data changed. The workbook will create or correct only its explicit dated rows.</p>{% endif %}
+          <dl class="vacation-import-summary"><div><dt>Academic year</dt><dd>{{ plan.data.academic_year }}-{{ plan.data.academic_year|add:1 }}</dd></div><div><dt>Occurrence plan</dt><dd>{{ plan.exact|length }} exact, {{ plan.correct|length }} corrected, {{ plan.create|length }} new</dd></div><div><dt>Date shapes</dt><dd>{{ plan.dated|length }} dated, {{ plan.multi_range|length }} multi-range, {{ plan.undated|length }} undated, {{ plan.unsupported|length }} unsupported</dd></div><div><dt>Faculty names</dt><dd>{{ plan.unique_names|length }} unique, {{ plan.ambiguous_names|length }} ambiguous, {{ plan.unmatched_names|length }} unmatched</dd></div><div><dt>Attendance</dt><dd>{{ plan.all_available_faculty|length }} all available Faculty, {{ plan.ignored_residents|length }} resident rows ignored</dd></div><div><dt>Blockers</dt><dd>{{ plan.blockers|length }}</dd></div></dl>
+          {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% if apply_form.non_field_errors %}<div class="form-validation-message" role="alert">{{ apply_form.non_field_errors }}</div>{% endif %}
+          {% if preview_token and not applied %}
+            <form method="post" class="form-layout form-presentation vacation-import-form" data-processing-feedback-form>
+              {% csrf_token %}
+              <input type="hidden" name="preview_token" value="{{ preview_token }}">
+              <div class="form-action-area"><button type="submit" name="action" value="apply">Apply previewed import</button></div>
+              {% include "schedules/processing_feedback.html" with processing_feedback_heading="Muriel is applying the previewed import" processing_feedback_message="This may take several seconds." %}
+            </form>
+          {% endif %}
+        </div>
+      </section>
+      <section class="workspace-surface surface-frame" aria-labelledby="schedule-import-rows-heading">
+        <header class="surface-header"><h2 id="schedule-import-rows-heading">Annual schedule plan</h2><p>Only explicit dated workbook rows can change their matching annual occurrence</p></header>
+        <div class="surface-body"><div class="table-scroll-frame"><table class="data-table vacation-import-table"><thead><tr><th scope="col">Result</th><th scope="col">Workbook row</th><th scope="col">Event</th><th scope="col">Inclusive dates</th><th scope="col">Coverage</th><th scope="col">Faculty</th><th scope="col">Detail</th></tr></thead><tbody>{% for item in presentation.exact %}<tr><td>{{ item.action }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.dates }}</td><td>{{ item.coverage }}</td><td>{{ item.faculty }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.correct %}<tr class="vacation-import-operation--create"><td>{{ item.action }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.dates }}</td><td>{{ item.coverage }}</td><td>{{ item.faculty }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.create %}<tr class="vacation-import-operation--create"><td>{{ item.action }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.dates }}</td><td>{{ item.coverage }}</td><td>{{ item.faculty }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.undated %}<tr><td>{{ item.action }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.dates }}</td><td>{{ item.coverage }}</td><td>{{ item.faculty }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.unsupported %}<tr class="vacation-import-operation--remove"><td>{{ item.action }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.dates }}</td><td>{{ item.coverage }}</td><td>{{ item.faculty }}</td><td>{{ item.detail }}</td></tr>{% endfor %}{% for item in presentation.names %}<tr class="vacation-import-operation--remove"><td>{{ item.action }}</td><td>{{ item.row_number }}</td><th scope="row">{{ item.base_name }}</th><td>{{ item.dates }}</td><td>{{ item.coverage }}</td><td>{{ item.faculty }}</td><td>{{ item.detail }}</td></tr>{% endfor %}</tbody></table></div></div>
+      </section>
+    {% endif %}
+  </div>
+  <script defer src="{% static 'schedules/form-processing-feedback.js' %}"></script>
+{% endblock %}

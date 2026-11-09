@@ -1,0 +1,21 @@
+{% extends "schedules/base.html" %}
+{% load static %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a class="form-return-link" href="{% url 'custom-availability-category-workspace' %}">Back to schedule options</a><h1 class="form-page-title">{{ title }}</h1></header>
+  {% if not category %}
+    <form method="post" class="form-layout form-presentation">{% csrf_token %}{% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}<section class="surface-frame surface-frame--raised"><header class="surface-header"><h2>Schedule option</h2></header><div class="surface-body form-content-stack">{% include "schedules/_form_field.html" with field=form.name %}{% include "schedules/_form_field.html" with field=form.impact %}{% include "schedules/_form_field.html" with field=form.reason helper=form.reason.help_text %}<div class="form-action-area"><button type="submit">Add schedule option</button></div></div></section></form>
+  {% else %}
+    {% if is_builtin %}<p>Built-in system option. Its name and scheduling impact are fixed.</p>{% elif not category.is_active %}<p>Inactive schedule option retained for history.</p>{% endif %}
+    {% if category.is_active %}
+{% if not is_builtin %}
+<form method="post" class="form-layout form-presentation">{% csrf_token %}<input type="hidden" name="action" value="definition">{% if definition_form.non_field_errors %}<div class="form-validation-message" role="alert">{{ definition_form.non_field_errors }}</div>{% endif %}<section class="surface-frame surface-frame--raised"><header class="surface-header"><h2>Schedule option</h2></header><div class="surface-body form-content-stack">{% include "schedules/_form_field.html" with field=definition_form.name %}{% include "schedules/_form_field.html" with field=definition_form.impact %}{% include "schedules/_form_field.html" with field=definition_form.reason helper=definition_form.reason.help_text %}<div class="form-action-area"><button type="submit">Save schedule option</button></div></div></section></form>
+{% endif %}
+<form method="post" class="form-layout form-presentation">{% csrf_token %}<input type="hidden" name="action" value="assignments">{% if assignment_form.non_field_errors %}<div class="form-validation-message" role="alert">{{ assignment_form.non_field_errors }}</div>{% endif %}<section class="surface-frame surface-frame--raised"><header class="surface-header"><h2>Physician assignment</h2><p>{{ assignment_form.physicians.help_text }}</p></header><div class="surface-body form-content-stack">{% include "schedules/physician_picker.html" with field=assignment_form.physicians selection_instructions="Choose the physicians who may use this schedule option." %}{% include "schedules/_form_field.html" with field=assignment_form.reason helper=assignment_form.reason.help_text %}<div class="form-action-area"><button type="submit">Save physician assignment</button></div></div></section></form>
+{% if not is_builtin %}
+<form method="post" class="form-layout form-presentation">{% csrf_token %}<input type="hidden" name="action" value="deactivate"><section class="surface-frame surface-frame--raised surface-tone--danger"><header class="surface-header"><h2>Deactivate schedule option</h2><p>Deactivation retains this schedule option, its assignments, and all change history.</p></header><div class="surface-body form-content-stack">{% include "schedules/_form_field.html" with field=deactivate_form.reason helper=deactivate_form.reason.help_text %}<div class="form-action-area"><button class="form-action--destructive" type="submit">Deactivate schedule option</button></div></div></section></form>
+{% endif %}
+    {% endif %}
+  {% endif %}
+  {% if category.is_active %}<script src="{% static 'schedules/physicians-picker.js' %}" defer></script>{% endif %}
+{% endblock %}

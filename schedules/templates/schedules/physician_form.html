@@ -1,0 +1,63 @@
+{% extends "schedules/base.html" %}
+{% load static %}
+{% block title %}{{ title }} | Physicians{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained">
+    <a class="form-return-link" href="{% if physician %}{% url 'physician-detail' physician.pk %}{% else %}{% url 'physicians-directory' %}{% endif %}">{% if physician %}Return to {{ physician.display_name }}{% else %}Return to Physicians{% endif %}</a>
+    <h1 class="form-page-title">{{ title }}</h1>
+  </header>
+  <form method="post" class="physicians-fact-form form-layout form-presentation"{% if form.role %} data-role-attributes{% endif %}>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="identity-section-heading">
+      <header class="surface-header">
+        <h2 id="identity-section-heading">Identity</h2>
+      </header>
+      <div class="surface-body">
+        {% include "schedules/_form_field.html" with field=form.display_name %}
+      </div>
+    </section>
+    {% if form.role %}
+      <section class="surface-frame surface-frame--raised" aria-labelledby="initial-role-section-heading">
+        <header class="surface-header">
+          <h2 id="initial-role-section-heading">Initial role</h2>
+          <p>Optional role and effective dates.</p>
+        </header>
+        <div class="surface-body form-content-stack">
+          <div class="form-field-grid form-field-grid--initial-role">
+            {% include "schedules/_form_field.html" with field=form.role %}
+            {% include "schedules/_form_field.html" with field=form.effective_start %}
+            {% include "schedules/_form_field.html" with field=form.effective_end %}
+          </div>
+          {% include "schedules/_form_checkbox.html" with field=form.faculty_equivalent role_attribute="faculty-equivalent" %}
+          {% include "schedules/_form_field.html" with field=form.faculty_leadership role_attribute="faculty-leadership" %}
+        </div>
+      </section>
+    {% endif %}
+    {% if form.create_login_and_invitation %}
+      <section class="surface-frame surface-frame--raised" aria-labelledby="login-invitation-section-heading">
+        <header class="surface-header">
+          <h2 id="login-invitation-section-heading">Login and invitation</h2>
+          <p>Optionally prepare an ordinary login linked to this physician.</p>
+        </header>
+        <div class="surface-body form-content-stack">
+          {% include "schedules/_form_checkbox.html" with field=form.create_login_and_invitation %}
+          {% include "schedules/_form_field.html" with field=form.official_email helper="Required only when creating a login and invitation." %}
+        </div>
+      </section>
+    {% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="notes-actions-section-heading">
+      <header class="surface-header">
+        <h2 id="notes-actions-section-heading">Actions</h2>
+      </header>
+        <div class="surface-body form-content-stack">
+        {% include "schedules/_form_field.html" with field=form.reason helper=form.reason.help_text %}
+        <div class="form-action-area">
+          <button type="submit">{{ title }}</button>
+          <a href="{% if physician %}{% url 'physician-detail' physician.pk %}{% else %}{% url 'physicians-directory' %}{% endif %}">{% if physician %}Return to {{ physician.display_name }}{% else %}Return to Physicians{% endif %}</a>
+        </div>
+      </div>
+    </section>
+  </form>
+  <script src="{% static 'schedules/role-attributes.js' %}" defer></script>
+{% endblock %}

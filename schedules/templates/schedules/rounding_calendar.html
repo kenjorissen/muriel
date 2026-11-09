@@ -1,0 +1,4 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_work_remaining %}{% include "schedules/work_remaining_summary.html" %}{% endblock %}
+{% block schedule_workspace_content %}<div class="workspace-surface-stack" aria-label="Rounding schedule">{% include "schedules/rounding_scheduling_actions.html" %}{% include "schedules/schedule_workspace_calendar_frame.html" with schedule_workspace_calendar_template="schedules/rounding_calendar_surface.html" %}</div>{% endblock %}

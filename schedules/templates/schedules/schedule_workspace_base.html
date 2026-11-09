@@ -1,0 +1,10 @@
+{% extends "schedules/base.html" %}
+{% load static %}
+{% block title %}{{ schedule_workspace_page_title }}{% endblock %}
+{% block content %}
+  {% include "schedules/schedule_workspace_header.html" %}
+  {% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_year_picker.html" %}{% endblock %}
+  {% block schedule_workspace_work_remaining %}{% endblock %}
+  {% block schedule_workspace_content %}{% endblock %}
+  <script defer src="{% static 'schedules/calendar-period-picker.js' %}"></script>
+{% endblock %}

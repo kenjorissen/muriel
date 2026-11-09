@@ -1,0 +1,171 @@
+#!/bin/sh
+# Stage a streamed archive and activate it only after its production checks pass.
+set -eu
+
+usage() {
+    printf '%s\n' "Usage: sudo $0 COMMIT [--root DIRECTORY]" >&2
+    exit 2
+}
+
+[ "$#" -ge 1 ] || usage
+commit=$1
+shift
+root=/
+if [ "$#" -gt 0 ]; then
+    [ "$#" -eq 2 ] && [ "$1" = --root ] || usage
+    root=$2
+    [ -d "$root" ] && [ ! -L "$root" ] || {
+        printf '%s\n' "--root must be an existing, non-symlink directory." >&2
+        exit 2
+    }
+    root=$(CDPATH= cd -- "$root" && pwd -P)
+fi
+
+case "$commit" in
+    *[!0123456789abcdef]*|???????????????????????????????????????)
+        printf '%s\n' "deploy-release requires a 40-character lowercase Git commit." >&2
+        exit 2
+        ;;
+esac
+if [ "$root" = / ] && [ "$(id -u)" -ne 0 ]; then
+    printf '%s\n' "deploy-release must run through sudo." >&2
+    exit 1
+fi
+
+base=$root/srv/muriel
+releases=$base/releases
+environment_file=$root/etc/muriel/environment
+backup_directory=$root/var/backups/muriel
+pip_cache=$base/shared/pip-cache
+release=$releases/$commit
+staging=
+migration_started=0
+activated=0
+
+fail() {
+    printf '%s\n' "deploy-release: $*" >&2
+    exit 1
+}
+
+on_exit() {
+    status=$?
+    trap - EXIT
+    if [ "$status" -ne 0 ]; then
+        [ -z "$staging" ] || rm -rf "$staging"
+        if [ "$migration_started" -eq 1 ]; then
+            printf '%s\n' "Deployment failed after database migration began. Do not automatically switch to an older code release: schema or data changes may be irreversible." >&2
+            printf '%s\n' "Inspect the service and recover by fixing forward or restoring the verified pre-deploy backup at $backup before selecting another release." >&2
+        elif [ "$activated" -eq 0 ]; then
+            printf '%s\n' "Deployment failed before activation; the previously selected release remains unchanged." >&2
+        fi
+    fi
+    exit "$status"
+}
+trap on_exit EXIT HUP INT TERM
+
+require_environment_setting() {
+    grep -q "^[[:space:]]*$1=" "$environment_file" || fail "required production configuration is missing: $1"
+}
+
+validate_environment() {
+    [ -f "$environment_file" ] && [ ! -L "$environment_file" ] || \
+        fail "production environment file is missing"
+    [ -r "$environment_file" ] || fail "production environment file is unreadable"
+    if [ "$root" = / ]; then
+        [ "$(stat -c '%U:%G:%a' "$environment_file")" = root:muriel:640 ] || \
+            fail "production environment file must be root:muriel mode 0640"
+    fi
+    for setting in \
+        PRECEPTOR_PRODUCTION_SECRET_KEY \
+        PRECEPTOR_PRODUCTION_ALLOWED_HOST \
+        PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN \
+        PRECEPTOR_POSTGRES_NAME \
+        PRECEPTOR_POSTGRES_USER; do
+        require_environment_setting "$setting"
+    done
+}
+
+run_in_release() {
+    working_release=$1
+    shift
+    runuser -u muriel -- sh -c '
+        environment_file=$1
+        working_release=$2
+        shift 2
+        set -a
+        . "$environment_file"
+        set +a
+        DJANGO_SETTINGS_MODULE=preceptor_project.production_settings
+        export DJANGO_SETTINGS_MODULE
+        cd "$working_release"
+        exec "$@"
+    ' sh "$environment_file" "$working_release" "$@"
+}
+
+create_backup() {
+    backup_report=$(runuser -u muriel -- env \
+        "MURIEL_ENVIRONMENT_FILE=$environment_file" \
+        "MURIEL_BACKUP_DIRECTORY=$backup_directory" \
+        "MURIEL_RELEASE_DIRECTORY=$base/current" \
+        "$root/srv/muriel/backup-database" --label pre-deploy) || \
+        fail "verified pre-deploy backup failed"
+    case "$backup_report" in
+        'Backup protected locally and off-host: pre-deploy-'????????T??????Z.dump)
+            backup=$backup_directory/${backup_report#Backup protected locally and off-host: }
+            ;;
+        *) fail "verified pre-deploy backup did not report its filename" ;;
+    esac
+}
+
+retain_recent_releases() {
+    retained=1
+    find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' | sort -rn | \
+        while IFS=' ' read -r _ candidate; do
+            case "$candidate" in
+                *[!0123456789abcdef]*|???????????????????????????????????????) continue ;;
+            esac
+            [ "$candidate" != "$commit" ] || continue
+            retained=$((retained + 1))
+            [ "$retained" -le 3 ] || rm -rf "$releases/$candidate"
+        done
+}
+
+[ -d "$releases" ] && [ ! -L "$releases" ] || fail "release directory is missing or unsafe"
+[ -d "$backup_directory" ] && [ ! -L "$backup_directory" ] || fail "backup directory is missing or unsafe"
+[ -d "$pip_cache" ] && [ ! -L "$pip_cache" ] || fail "pip cache directory is missing or unsafe"
+if [ "$root" = / ]; then
+    [ "$(stat -c '%U:%G:%a' "$pip_cache")" = muriel:muriel:700 ] || \
+        fail "pip cache directory must be muriel:muriel mode 0700"
+fi
+[ ! -e "$release" ] && [ ! -L "$release" ] || fail "release already exists for commit $commit"
+validate_environment
+
+staging=$releases/.staging-$commit-$$
+mkdir "$staging"
+tar --extract --file - --directory "$staging" --no-same-owner
+chown -R muriel:muriel "$staging"
+
+runuser -u muriel -- python3.14 -m venv "$staging/.venv"
+run_in_release "$staging" env "PIP_CACHE_DIR=$pip_cache" \
+    "$staging/.venv/bin/python" -m pip install --disable-pip-version-check --no-input --requirement requirements.txt
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py check --deploy
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py makemigrations --check --dry-run
+
+create_backup
+
+migration_started=1
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py migrate --noinput
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py collectstatic --noinput
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py check_production
+
+mv "$staging" "$release"
+staging=
+ln -s "releases/$commit" "$base/.current-$commit-$$"
+mv -T "$base/.current-$commit-$$" "$base/current"
+activated=1
+systemctl enable muriel
+systemctl restart muriel
+systemctl is-active --quiet muriel
+retain_recent_releases
+
+printf 'Activated Muriel release %s.\n' "$commit"

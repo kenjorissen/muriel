@@ -1,0 +1,5 @@
+{% extends "schedules/base.html" %}
+{% block title %}Invitation unavailable{% endblock %}
+{% block content %}
+  <section class="panel sign-in-panel" aria-labelledby="invitation-heading"><h1 id="invitation-heading">This invitation is no longer valid</h1><p class="sign-in-introduction">It may have expired, been used, been revoked, or been replaced. Ask an administrator to send a fresh invitation.</p><p class="sign-in-help"><a href="{% url 'sign-in' %}">Back to sign in</a></p></section>
+{% endblock %}

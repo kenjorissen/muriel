@@ -1,0 +1,5 @@
+{% extends "schedules/base.html" %}
+{% block title %}Set up your account{% endblock %}
+{% block content %}
+  <section class="panel sign-in-panel" aria-labelledby="invitation-heading"><h1 id="invitation-heading">Set up your account</h1><p class="sign-in-introduction">Choose a password to activate your account.</p><form class="sign-in-form" method="post">{% csrf_token %}{% for field in form %}<div class="sign-in-field">{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</div>{% endfor %}<div class="sign-in-actions"><button type="submit">Activate account</button></div></form></section>
+{% endblock %}

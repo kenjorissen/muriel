@@ -1,0 +1,5 @@
+{% if calendar_status_legend %}
+  <aside class="calendar-status-legend" aria-label="Calendar status legend">
+    {% for status in calendar_status_legend %}<span class="calendar-status-legend-item calendar-week-status--{{ status.state }}"><span aria-hidden="true">{{ status.symbol }}</span> {{ status.name }}</span>{% endfor %}
+  </aside>
+{% endif %}

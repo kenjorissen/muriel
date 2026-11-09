@@ -1,0 +1,36 @@
+{% if alternatives.current or alternatives %}
+  <section class="surface-frame surface-frame--raised assignment-alternatives" aria-labelledby="alternative-details-heading">
+    <header class="surface-header"><h2 id="alternative-details-heading">Assignment Options</h2><p>Availability changes preference order, not whether a scheduler may select a role-eligible physician.</p></header>
+    <div class="surface-body"><div class="alternative-grid">
+      {% if alternatives.current %}
+        <fieldset class="alternative-tier">
+          <legend>{{ alternatives.current.tier_label }}</legend>
+          <div class="alternative">
+            <strong>{{ alternatives.current.physician.display_name }}</strong>
+            <span class="meta">Category: {{ alternatives.current.effective_category_display }} | Faculty-equivalent: {{ alternatives.current.faculty_equivalent_display }} | {{ alternatives.current.expected_display }} | Effective state: {{ alternatives.current.availability_display }}</span>
+            <span>{{ alternatives.current.availability_reason }}</span>
+            {% if not alternatives.current.ordinarily_eligible_to_precept %}<span class="inconsistent">Retained assignment: no effective preceptor role on this date.</span>{% endif %}
+            {% if alternatives.current.responsibility == "secondary" and alternatives.current.effective_category == "community_preceptor" %}<span class="inconsistent">Retained assignment: Community Preceptor assignments must be Primary.</span>{% endif %}
+            {% if alternatives.current.sources %}<ul class="sources">{% for source in alternatives.current.sources %}<li>{{ source.label }}: {{ source.reason }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+        </fieldset>
+      {% endif %}
+      {% for tier in alternatives.tiers %}
+        <fieldset class="alternative-tier {% if tier.key == 'backup_only' %}backup{% elif tier.key == 'not_available' %}hard-conflict{% endif %}">
+          <legend>{{ tier.label }}</legend>
+          {% for alternative in tier.alternatives %}
+            <div class="alternative">
+              <strong>{{ alternative.physician.display_name }}</strong>
+              <span class="meta">Category: {{ alternative.effective_category_display }} | Faculty-equivalent: {{ alternative.faculty_equivalent_display }} | {{ alternative.expected_display }} | Effective state: {{ alternative.availability_display }}</span>
+              <span>{{ alternative.status_text }}</span>
+              {% if alternative.selection_consequence %}<span class="consequence">{{ alternative.selection_consequence }}</span>{% endif %}
+              {% if alternative.reasons %}<details><summary>Assessment details</summary><ul class="sources">{% for reason in alternative.reasons %}<li><strong>{{ reason.summary }}</strong>: {{ reason.detail }}{% if reason.source_identity %} ({{ reason.source_type }} {{ reason.source_id }}){% endif %}</li>{% endfor %}</ul></details>{% endif %}
+            </div>
+          {% empty %}
+            <p class="empty">No physicians in this tier.</p>
+          {% endfor %}
+        </fieldset>
+      {% endfor %}
+    </div></div>
+  </section>
+{% endif %}

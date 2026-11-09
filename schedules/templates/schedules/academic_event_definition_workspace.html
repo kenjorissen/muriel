@@ -1,0 +1,13 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_academic_year_navigation.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="workspace-surface-stack" aria-label="Academic Event definitions">
+  <section class="workspace-surface surface-frame"><div class="surface-body surface-content-stack"><p>Definitions name the Academic Events expected in each academic year. Scheduling their annual occurrences happens separately.</p>
+  <nav class="contextual-action-row" aria-label="Definition actions">
+    <a class="button-link" href="{% url 'academic-event-definition-create' %}">Add Event Definition</a>
+    <a href="{% url 'academic-event-definition-history' %}">Definition History</a>
+  </nav></div></section>
+  <section class="workspace-surface surface-frame"><header class="surface-header"><h2>Monthly-rule definitions</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=academic_event_monthly_rule_definitions_table %}</div></section>
+  <section class="workspace-surface surface-frame"><header class="surface-header"><h2>Yearly definitions</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=academic_event_yearly_definitions_table %}</div></section>
+  </div>
+{% endblock %}

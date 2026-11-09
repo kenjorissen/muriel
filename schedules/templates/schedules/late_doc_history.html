@@ -1,0 +1,6 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width"><a class="form-return-link" href="{{ return_url }}">Back to schedule</a><h1 class="form-page-title">Late Doc history: {{ on_date|date:"l, F j, Y" }}</h1></header>
+  <section class="surface-frame surface-frame--raised"><div class="surface-body">{% if changes %}<ol>{% for change in changes %}<li>{{ change.get_action_display }} by {{ change.changed_by.get_username }} at {{ change.changed_at }}. {% if change.note %}Note: {{ change.note }}.{% else %}No note.{% endif %} Prior: {{ change.previous_value|default:"none" }}. Recorded: {{ change.recorded_value|default:"none" }}.</li>{% endfor %}</ol>{% else %}<p>No Late Doc changes have been recorded.</p>{% endif %}</div></section>
+{% endblock %}

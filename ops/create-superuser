@@ -1,0 +1,99 @@
+#!/bin/sh
+# Run Django's interactive superuser command only against the active production release.
+set -eu
+
+usage() {
+    printf '%s\n' "Usage: sudo $0 [--root DIRECTORY]" >&2
+    exit 2
+}
+
+fail() {
+    printf '%s\n' "create-superuser: $*" >&2
+    exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || fail "must run through sudo"
+
+root=/
+if [ "$#" -gt 0 ]; then
+    [ "$#" -eq 2 ] && [ "$1" = --root ] || usage
+    root=$2
+    [ -d "$root" ] && [ ! -L "$root" ] || usage
+fi
+root=$(CDPATH= cd -- "$root" && pwd -P)
+
+base=$root/srv/muriel
+releases=$base/releases
+release=$base/current
+environment_file=$root/etc/muriel/environment
+
+[ -d "$base" ] && [ ! -L "$base" ] || fail "Muriel installation directory is missing or unsafe"
+[ -d "$releases" ] && [ ! -L "$releases" ] || fail "release directory is missing or unsafe"
+[ -L "$release" ] && [ -d "$release" ] || fail "current production release is missing or unsafe"
+resolved_releases=$(CDPATH= cd -- "$releases" && pwd -P)
+resolved_release=$(CDPATH= cd -- "$release" && pwd -P)
+case "$resolved_release" in
+    "$resolved_releases"/*) ;;
+    *) fail "current production release is outside the managed release directory" ;;
+esac
+[ -x "$resolved_release/.venv/bin/python" ] || fail "current production Python is missing or unsafe"
+[ -f "$resolved_release/manage.py" ] && [ ! -L "$resolved_release/manage.py" ] || \
+    fail "current production manage.py is missing or unsafe"
+
+[ -f "$environment_file" ] && [ ! -L "$environment_file" ] && [ -r "$environment_file" ] || \
+    fail "production environment file is missing or unsafe"
+[ "$(stat -c '%U:%G:%a' "$environment_file")" = root:muriel:640 ] || \
+    fail "production environment file must be root:muriel mode 0640"
+for setting in \
+    PRECEPTOR_PRODUCTION_SECRET_KEY \
+    PRECEPTOR_PRODUCTION_ALLOWED_HOST \
+    PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN \
+    PRECEPTOR_POSTGRES_NAME \
+    PRECEPTOR_POSTGRES_USER; do
+    grep -q "^[[:space:]]*$setting=" "$environment_file" || \
+        fail "required production configuration is missing: $setting"
+done
+grep -q '^[[:space:]]*PRECEPTOR_POSTGRES_NAME=muriel[[:space:]]*$' "$environment_file" || \
+    fail "requires PRECEPTOR_POSTGRES_NAME=muriel"
+grep -q '^[[:space:]]*PRECEPTOR_POSTGRES_USER=muriel[[:space:]]*$' "$environment_file" || \
+    fail "requires PRECEPTOR_POSTGRES_USER=muriel"
+if grep -q '^[[:space:]]*PRECEPTOR_POSTGRES_HOST=' "$environment_file"; then
+    grep -q '^[[:space:]]*PRECEPTOR_POSTGRES_HOST=/var/run/postgresql[[:space:]]*$' "$environment_file" || \
+        fail "requires the PostgreSQL 18/main local socket"
+fi
+if grep -q '^[[:space:]]*PRECEPTOR_POSTGRES_PORT=' "$environment_file"; then
+    grep -q '^[[:space:]]*PRECEPTOR_POSTGRES_PORT=5432[[:space:]]*$' "$environment_file" || \
+        fail "requires PostgreSQL 18/main port 5432"
+fi
+command -v pg_lsclusters >/dev/null 2>&1 || fail "pg_lsclusters is required"
+pg_lsclusters --no-header | grep -Eq '^18[[:space:]]+main[[:space:]]+5432[[:space:]]+online[[:space:]]' || \
+    fail "PostgreSQL 18/main must own local port 5432"
+
+runuser -u muriel -- sh -c '
+    set -eu
+    fail() {
+        printf "%s\n" "create-superuser: $*" >&2
+        exit 1
+    }
+    set -a
+    . "$1"
+    set +a
+    [ -n "${PRECEPTOR_PRODUCTION_SECRET_KEY:-}" ] || \
+        fail "required production configuration is missing: PRECEPTOR_PRODUCTION_SECRET_KEY"
+    [ -n "${PRECEPTOR_PRODUCTION_ALLOWED_HOST:-}" ] || \
+        fail "required production configuration is missing: PRECEPTOR_PRODUCTION_ALLOWED_HOST"
+    [ -n "${PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN:-}" ] || \
+        fail "required production configuration is missing: PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN"
+    [ "${PRECEPTOR_POSTGRES_NAME:-}" = muriel ] || \
+        fail "requires PRECEPTOR_POSTGRES_NAME=muriel"
+    [ "${PRECEPTOR_POSTGRES_USER:-}" = muriel ] || \
+        fail "requires PRECEPTOR_POSTGRES_USER=muriel"
+    [ "${PRECEPTOR_POSTGRES_HOST:-/var/run/postgresql}" = /var/run/postgresql ] || \
+        fail "requires the PostgreSQL 18/main local socket"
+    [ "${PRECEPTOR_POSTGRES_PORT:-5432}" = 5432 ] || \
+        fail "requires PostgreSQL 18/main port 5432"
+    DJANGO_SETTINGS_MODULE=preceptor_project.production_settings
+    export DJANGO_SETTINGS_MODULE
+    cd "$2"
+    exec "$3" manage.py createsuperuser
+' sh "$environment_file" "$resolved_release" "$resolved_release/.venv/bin/python"

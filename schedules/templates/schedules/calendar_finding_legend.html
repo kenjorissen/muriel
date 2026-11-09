@@ -1,0 +1,5 @@
+{% if finding_legend %}
+  <aside class="calendar-status-legend" aria-label="Assignment finding legend">
+    {% for finding in finding_legend %}<span class="calendar-status-legend-item calendar-finding-indicator--{{ finding.state }}"><span aria-hidden="true">{{ finding.symbol }}</span> {{ finding.name }}</span>{% endfor %}
+  </aside>
+{% endif %}

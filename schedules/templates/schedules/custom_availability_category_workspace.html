@@ -1,0 +1,12 @@
+{% extends "schedules/base.html" %}
+{% block title %}Schedule options{% endblock %}
+{% block content %}
+  <h1 class="visually-hidden">Schedule options</h1>
+  {% include "schedules/physician_local_navigation.html" %}
+  {% include "schedules/workspace_introduction.html" with introduction="Schedule options supplement the fixed Open, Backup only, Patient care, and Off schedule states." %}
+  <div class="workspace-surface-stack" aria-label="Schedule options">
+  {% url 'custom-availability-category-history' as category_history_url %}
+  <section class="workspace-surface surface-frame workspace-actions">{% include "schedules/schedule_workspace_contextual_action_header.html" with history_url=category_history_url history_label="Schedule option change history" %}<div class="surface-body"><a class="button-link" href="{% url 'custom-availability-category-create' %}">Add schedule option</a></div></section>
+  <section class="workspace-surface surface-frame"><header class="surface-header"><h2>Schedule Options</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=schedule_options_table %}</div></section>
+  </div>
+{% endblock %}

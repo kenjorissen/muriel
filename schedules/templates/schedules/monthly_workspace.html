@@ -1,0 +1,24 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load tz %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_work_remaining %}{% include "schedules/work_remaining_summary.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <h1 class="visually-hidden">Preceptor Schedule for {{ selected_month|date:"F Y" }}</h1>
+  <div class="workspace-surface-stack" aria-label="Preceptor Schedule calendar">
+    <div class="calendar-month-actions">
+      <p class="meta calendar-edit-instruction">Select a name or empty slot to make changes.</p>
+      <p class="meta calendar-edit-instruction" id="month-last-edit">
+        {{ selected_month|date:"F Y" }} last edited:
+        {% if selected_period.last_edited_at %}
+          {% timezone organization_timezone %}<time datetime="{{ selected_period.last_edited_at|date:'c' }}">{{ selected_period.last_edited_at|date:"M j, Y, P T" }}</time>{% endtimezone %}
+          ({{ organization_timezone }})
+        {% else %}
+          {# TEXT-CONTRACT: precepting-month-no-edits — The initial-display decision in docs/design.md, Accepted direction: month-calendar Precepting, requires the human-selected exact lowercase label, including its internal spaces and no punctuation. Surrounding markup/whitespace is not fixed. Protected by MonthEditDisplayTests.test_initial_label_is_replaced_by_the_recorded_first_edit in schedules/tests/test_month_edit_display.py. #}
+          <span>no edits yet</span>
+        {% endif %}
+      </p>
+      <a href="{{ precepting_calendar_pdf_url }}">PDF</a>
+    </div>
+    {% include "schedules/schedule_workspace_calendar_frame.html" with schedule_workspace_calendar_template="schedules/preceptor_month_calendar.html" %}
+  </div>
+{% endblock %}

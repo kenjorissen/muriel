@@ -1,0 +1,11 @@
+<div class="form-field-group" data-range-control-value="month">
+  <nav class="toolbar period-navigation period-navigation-cluster solver-period-navigation" aria-label="Month navigation"><button type="button" data-solve-step-month="-1" aria-label="Previous month">&lsaquo;</button>{{ form.month }}<button type="button" data-solve-step-month="1" aria-label="Next month">&rsaquo;</button></nav>{{ form.month.errors }}
+</div>
+<div class="form-field-grid form-field-grid--effective-range solver-quarter-period-controls" data-range-control-value="quarter">
+  <div class="form-field-group">{{ form.academic_year.label_tag }}<nav class="toolbar period-navigation period-navigation-cluster solver-period-navigation period-navigation--academic-year" aria-label="Academic year navigation"><button type="button" data-solve-step-academic-year="-1" aria-label="Previous academic year">&lsaquo;</button>{{ form.academic_year }}<button type="button" data-solve-step-academic-year="1" aria-label="Next academic year">&rsaquo;</button></nav>{{ form.academic_year.errors }}</div>
+  <div class="form-field-group">{{ form.quarter.label_tag }}<nav class="toolbar period-navigation period-navigation-cluster solver-period-navigation" aria-label="Quarter navigation"><button type="button" data-solve-step-quarter="-1" aria-label="Previous quarter">&lsaquo;</button>{{ form.quarter }}<button type="button" data-solve-step-quarter="1" aria-label="Next quarter">&rsaquo;</button></nav>{{ form.quarter.errors }}</div>
+</div>
+<div class="form-field-grid form-field-grid--effective-range" data-range-control-value="custom">
+  <div class="form-field-group">{{ form.start_date.label_tag }}{{ form.start_date }}{{ form.start_date.errors }}</div>
+  <div class="form-field-group">{{ form.end_date.label_tag }}{{ form.end_date }}{{ form.end_date.errors }}</div>
+</div>

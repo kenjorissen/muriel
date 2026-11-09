@@ -1,0 +1,5 @@
+Original fictional Random Health logo generated on 2026-09-10 with the built-in image_gen tool.
+The PNG retains its generated transparency. The header frames its transparent margins with CSS.
+
+Generation prompt (redacted: an organization-specific comparison constraint is omitted):
+Use case: logo-brand. Create one finished horizontal website header logo for a fictional healthcare organization. Text verbatim: "Random Health". Use a distinctive rounded sans-serif wordmark in deep charcoal, one line, with a compact organic emblem on the left made of three rounded interlocking arcs forming a loose circular blossom in emerald green, medium blue, and rich purple. Clearly original identity: no diamonds, no tilted squares, no serif type, [comparison constraint omitted]. Flat solid colors, crisp professional edges, no gradients, no shadows, no mockup, no tagline, no trademark symbols. Transparent background with real alpha. Wide and tightly framed around the full logo with only a small clear margin, approximately 6:1 wordmark proportions. It must read clearly when displayed at 240 pixels wide. Return only the logo asset.

@@ -1,0 +1,11 @@
+# Advanced option: bootstrap generates this file when it is absent. If you intentionally
+# manage it yourself, install it as root:muriel_staging mode 0640 with a distinct secret.
+# Replace this neutral pair with the physical host's actual staging identity; supply
+# the same two NONSECRET values as process input to bootstrap/update. An existing
+# protected file must match; bootstrap never rewrites it. Never export its secret
+# locally, pass the secret as an argument, or copy production configuration.
+PRECEPTOR_STAGING_SECRET_KEY=
+PRECEPTOR_STAGING_ALLOWED_HOST=staging.example.test
+PRECEPTOR_STAGING_CSRF_TRUSTED_ORIGIN=https://staging.example.test:10000
+PRECEPTOR_STAGING_POSTGRES_NAME=muriel_staging
+PRECEPTOR_STAGING_POSTGRES_USER=muriel_staging

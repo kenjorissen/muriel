@@ -1,0 +1,1 @@
+{% if content.closed_label %}<p class="calendar-closed-cell" aria-label="{{ content.accessible_label }}">{{ content.closed_label }}</p>{% else %}<ul class="community-preceptor-calendar-commitments">{% for occurrence in content.occurrences %}<li><a href="{{ occurrence.url }}">{{ occurrence.physician_name }} <span>{{ occurrence.period }}</span></a></li>{% endfor %}</ul>{% endif %}

@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ title }} | Rounding Schedule{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a href="{{ return_url }}">Back to Rounding Schedule</a><h1 class="form-page-title">{{ title }}</h1></header>
+  {% include "schedules/_casual_rounder_roster.html" %}
+{% endblock %}

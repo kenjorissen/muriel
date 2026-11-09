@@ -1,0 +1,146 @@
+#!/bin/sh
+# Stage a synthetic release and activate it only after staging checks pass.
+set -eu
+
+usage() {
+    printf '%s\n' "Usage: sudo $0 COMMIT [--root DIRECTORY]" >&2
+    exit 2
+}
+
+[ "$#" -ge 1 ] || usage
+commit=$1
+shift
+root=/
+if [ "$#" -gt 0 ]; then
+    [ "$#" -eq 2 ] && [ "$1" = --root ] || usage
+    root=$2
+    [ -d "$root" ] && [ ! -L "$root" ] || {
+        printf '%s\n' "--root must be an existing, non-symlink directory." >&2
+        exit 2
+    }
+    root=$(CDPATH= cd -- "$root" && pwd -P)
+fi
+
+case "$commit" in
+    *[!0123456789abcdef]*|???????????????????????????????????????)
+        printf '%s\n' "deploy-staging-release requires a 40-character lowercase Git commit." >&2
+        exit 2
+        ;;
+esac
+if [ "$root" = / ] && [ "$(id -u)" -ne 0 ]; then
+    printf '%s\n' "deploy-staging-release must run through sudo." >&2
+    exit 1
+fi
+
+base=$root/srv/muriel-staging
+releases=$base/releases
+environment_file=$root/etc/muriel-staging/environment
+pip_cache=$base/shared/pip-cache
+release=$releases/$commit
+staging=
+activated=0
+
+fail() {
+    printf '%s\n' "deploy-staging-release: $*" >&2
+    exit 1
+}
+
+on_exit() {
+    status=$?
+    trap - EXIT
+    if [ "$status" -ne 0 ]; then
+        [ -z "$staging" ] || rm -rf "$staging"
+        if [ "$activated" -eq 0 ]; then
+            printf '%s\n' "Deployment failed before activation; the previously selected staging release remains unchanged." >&2
+        fi
+    fi
+    exit "$status"
+}
+trap on_exit EXIT HUP INT TERM
+
+require_environment_setting() {
+    grep -q "^[[:space:]]*$1=" "$environment_file" || fail "required staging configuration is missing: $1"
+}
+
+validate_environment() {
+    [ -f "$environment_file" ] && [ ! -L "$environment_file" ] || \
+        fail "staging environment file is missing"
+    [ -r "$environment_file" ] || fail "staging environment file is unreadable"
+    if [ "$root" = / ]; then
+        [ "$(stat -c '%U:%G:%a' "$environment_file")" = root:muriel_staging:640 ] || \
+            fail "staging environment file must be root:muriel_staging mode 0640"
+    fi
+    for setting in \
+        PRECEPTOR_STAGING_SECRET_KEY \
+        PRECEPTOR_STAGING_ALLOWED_HOST \
+        PRECEPTOR_STAGING_CSRF_TRUSTED_ORIGIN \
+        PRECEPTOR_STAGING_POSTGRES_NAME \
+        PRECEPTOR_STAGING_POSTGRES_USER; do
+        require_environment_setting "$setting"
+    done
+}
+
+run_in_release() {
+    working_release=$1
+    shift
+    runuser -u muriel_staging -- sh -c '
+        environment_file=$1
+        working_release=$2
+        shift 2
+        set -a
+        . "$environment_file"
+        set +a
+        DJANGO_SETTINGS_MODULE=preceptor_project.staging_settings
+        export DJANGO_SETTINGS_MODULE
+        cd "$working_release"
+        exec "$@"
+    ' sh "$environment_file" "$working_release" "$@"
+}
+
+retain_recent_releases() {
+    retained=1
+    find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' | sort -rn | \
+        while IFS=' ' read -r _ candidate; do
+            case "$candidate" in
+                *[!0123456789abcdef]*|???????????????????????????????????????) continue ;;
+            esac
+            [ "$candidate" != "$commit" ] || continue
+            retained=$((retained + 1))
+            [ "$retained" -le 3 ] || rm -rf "$releases/$candidate"
+        done
+}
+
+[ -d "$releases" ] && [ ! -L "$releases" ] || fail "staging release directory is missing or unsafe"
+[ -d "$pip_cache" ] && [ ! -L "$pip_cache" ] || fail "staging pip cache directory is missing or unsafe"
+if [ "$root" = / ]; then
+    [ "$(stat -c '%U:%G:%a' "$pip_cache")" = muriel_staging:muriel_staging:700 ] || \
+        fail "staging pip cache directory must be muriel_staging:muriel_staging mode 0700"
+fi
+[ ! -e "$release" ] && [ ! -L "$release" ] || fail "staging release already exists for commit $commit"
+validate_environment
+
+staging=$releases/.staging-$commit-$$
+mkdir "$staging"
+tar --extract --file - --directory "$staging" --no-same-owner
+chown -R muriel_staging:muriel_staging "$staging"
+
+runuser -u muriel_staging -- python3.14 -m venv "$staging/.venv"
+run_in_release "$staging" env "PIP_CACHE_DIR=$pip_cache" \
+    "$staging/.venv/bin/python" -m pip install --disable-pip-version-check --no-input --requirement requirements.txt
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py check --deploy
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py makemigrations --check --dry-run
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py migrate --noinput
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py collectstatic --noinput
+run_in_release "$staging" "$staging/.venv/bin/python" manage.py check_staging
+
+mv "$staging" "$release"
+staging=
+ln -s "releases/$commit" "$base/.current-$commit-$$"
+mv -T "$base/.current-$commit-$$" "$base/current"
+activated=1
+systemctl enable muriel-staging
+systemctl restart muriel-staging
+systemctl is-active --quiet muriel-staging
+retain_recent_releases
+
+printf 'Activated Muriel staging release %s.\n' "$commit"

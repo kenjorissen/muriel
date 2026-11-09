@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a class="form-return-link" href="{% url 'stipend-rate-workspace' %}">Back to stipend rates</a><h1 class="form-page-title">{{ title }}</h1></header>
+  <form method="post" class="form-layout form-presentation">{% csrf_token %}{% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}<section class="surface-frame surface-frame--raised"><div class="surface-body form-content-stack">{% for field in form %}{% include "schedules/_form_field.html" with field=field helper=field.help_text %}{% endfor %}<div class="form-action-area"><button type="submit">{{ submit_label }}</button></div></div></section></form>
+{% endblock %}

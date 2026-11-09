@@ -1,0 +1,34 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% load static %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <h1 class="visually-hidden">Schedule Bot</h1>
+  <div class="workspace-surface-stack" aria-label="Schedule Bot">
+    {% if recent_proposals or additional_recent_proposals or older_proposals %}
+      <section id="recent-proposals" class="workspace-surface surface-frame" aria-labelledby="recent-proposals-heading">
+        <header class="surface-header"><h2 id="recent-proposals-heading">Recent unapplied proposals</h2></header>
+        <div class="surface-body">
+          {% include "schedules/data_table.html" with table=recent_proposals_table %}
+          {% if not older_proposals %}<p><a href="?older=1">View older proposals</a></p>{% else %}<h3>Older unapplied proposals</h3><ol>{% for proposal in older_proposals %}<li><a href="{% url 'precepting-solver-review' proposal.pk %}">{{ proposal.solve_start_date }} through {{ proposal.solve_end_date }}</a> {% if proposal.is_current %}Current{% else %}Stale{% endif %}</li>{% endfor %}</ol>{% if history_proposals %}<h3>Applied proposal history</h3><ol>{% for proposal in history_proposals %}<li><a href="{% url 'precepting-solver-review' proposal.pk %}">{{ proposal.solve_start_date }} through {{ proposal.solve_end_date }}</a> Applied by {{ proposal.applied_by }}</li>{% endfor %}</ol>{% endif %}{% endif %}
+        </div>
+      </section>
+    {% endif %}
+    <section class="workspace-surface surface-frame workspace-actions" aria-labelledby="make-new-proposal-heading">
+      <header class="surface-header"><h2 id="make-new-proposal-heading">Make new proposal</h2></header>
+      <div class="surface-body surface-content-stack">
+        <p class="meta">Choose the work to fill. Repair changes only unlocked assignments in the selected future range. Either creates a proposal for human review.</p>
+        {% if reused_proposal %}<p class="meta">Reusing setup from proposal {{ reused_proposal.pk }}. <a href="{% url 'precepting-solver-workspace' %}">New proposal</a></p>{% endif %}
+        {% if show_feedback %}<section id="solve-feedback" class="surface-frame surface-tone--danger" role="alert" tabindex="-1" aria-labelledby="solve-feedback-heading"><header class="surface-header"><h2 id="solve-feedback-heading">Schedule readiness</h2></header><div class="surface-body">{% if preflight.blockers %}{% for blocker in preflight.blockers %}<p><strong>{{ blocker.message }}</strong> {% for date in blocker.dates %}{{ date }} {% endfor %}</p>{% endfor %}{% else %}<p><strong>Correct the highlighted setup fields before running Schedule Bot.</strong></p>{{ form.non_field_errors }}{% for field in form %}{% if field.errors %}<p><strong>{{ field.label }}:</strong> {{ field.errors }}</p>{% endif %}{% endfor %}{% endif %}</div></section>{% endif %}
+        <form method="post" action="#solve-feedback" class="form-presentation solve-setup" data-precepting-solve-controls data-processing-feedback-form data-solve-today="{{ organization_today|date:'Y-m-d' }}">{% csrf_token %}{{ form.non_field_errors }}
+          <section class="surface-frame surface-frame--raised" aria-labelledby="solve-mode-heading"><header class="surface-header"><h2 id="solve-mode-heading">Mode</h2></header><div class="surface-body form-content-stack"><fieldset class="form-choice-group"><legend>Choose work</legend><div class="form-choice-group-content"><div>{% for value, label in form.fields.mode.choices %}<div><label><input type="radio" name="mode" value="{{ value }}"{% if form.mode.value == value %} checked{% endif %}> {{ label }}</label></div>{% endfor %}</div></div></fieldset>{{ form.mode.errors }}</div></section>
+          <section class="surface-frame surface-frame--raised" aria-labelledby="solve-range-heading"><header class="surface-header"><h2 id="solve-range-heading">Range</h2></header><div class="surface-body form-content-stack">{% include "schedules/date_range_controls.html" with range_control_name="range_kind" range_control_label="Proposal range" range_control_choices=form.fields.range_kind.choices range_control_selected=form.range_kind.value range_control_picker_template="schedules/precepting_solver_range_picker.html" range_control_effective_start=solve_range.start_date range_control_effective_end=solve_range.end_date %}{{ form.range_kind.errors }}</div></section>
+          <section class="surface-frame surface-frame--raised" aria-labelledby="solve-balance-heading"><header class="surface-header"><h2 id="solve-balance-heading">Balance span</h2></header><div class="surface-body form-content-stack"><div class="form-field-group">{{ form.balance_span.label_tag }}{{ form.balance_span }}{{ form.balance_span.errors }}</div><div class="form-field-group" data-solve-custom-days>{{ form.balance_custom_days.label_tag }}{{ form.balance_custom_days }}{{ form.balance_custom_days.errors }}<p class="form-helper">Use a positive whole number of days.</p></div><div class="form-field-group form-read-only-value"><span class="form-field-label">Effective balance span</span><output data-solve-balance-range>{{ balance_window.start_date|date:"M j, Y" }} through {{ balance_window.end_date|date:"M j, Y" }}</output></div></div></section>
+          <section class="surface-frame surface-frame--raised" aria-labelledby="solve-special-rules-heading"><header class="surface-header"><h2 id="solve-special-rules-heading">Special rules</h2></header><div class="surface-body form-content-stack">{% include "schedules/physician_picker.html" with field=form.excluded_physician_ids selection_instructions="Choose the physicians to exclude from this proposal." %}</div></section>
+          <div class="form-action-area"><button type="submit">Run Schedule Bot</button></div>
+          {% include "schedules/processing_feedback.html" with processing_feedback_heading="Building proposal" processing_feedback_message="Schedule Bot can take several seconds." processing_feedback_elapsed=True %}
+        </form>
+      </div>
+    </section>
+  </div>
+  <script defer src="{% static 'schedules/range-controls.js' %}"></script><script defer src="{% static 'schedules/form-processing-feedback.js' %}"></script><script defer src="{% static 'schedules/precepting-solve-controls.js' %}"></script><script defer src="{% static 'schedules/physicians-picker.js' %}"></script>
+{% endblock %}

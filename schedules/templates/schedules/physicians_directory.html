@@ -1,0 +1,33 @@
+{% extends "schedules/base.html" %}
+{% block title %}Physicians{% endblock %}
+{% block content %}
+  <h1 class="visually-hidden">Physician directory</h1>
+  <div class="split-row physician-directory-view-row">
+    {% include "schedules/physician_local_navigation.html" %}
+    {% if perms.schedules.manage_scheduling_administration %}<a class="button-link split-row-action" href="{% url 'physician-create' %}">Add physician</a>{% endif %}
+  </div>
+  <div class="split-row physician-directory-date-row">
+    <p class="physician-directory-date meta">Current roles and source schedules as of <time datetime="{{ today|date:'Y-m-d' }}">{{ today }}</time>.</p>
+    <a class="split-row-action" href="{% url 'physicians-history' %}">Physician change history</a>
+  </div>
+  {% if selected_view == 'all' %}
+    <div class="workspace-surface-stack" aria-label="Physicians">
+      <section class="workspace-surface surface-frame" aria-labelledby="active-physicians-heading">
+        <header class="surface-header">
+          <h2 id="active-physicians-heading">Active</h2>
+        </header>
+        <div class="surface-body">{% include "schedules/data_table.html" with table=active_physicians_table %}</div>
+      </section>
+      <section class="workspace-surface surface-frame" aria-labelledby="inactive-physicians-heading">
+        <header class="surface-header">
+          <h2 id="inactive-physicians-heading">Inactive</h2>
+        </header>
+        <div class="surface-body">{% include "schedules/data_table.html" with table=inactive_physicians_table %}</div>
+      </section>
+    </div>
+  {% else %}
+    <section class="workspace-surface surface-frame" aria-label="{{ selected_view_label }} physicians">
+      <div class="surface-body">{% include "schedules/data_table.html" with table=directory_table %}</div>
+    </section>
+  {% endif %}
+{% endblock %}

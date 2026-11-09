@@ -1,0 +1,11 @@
+<section class="workspace-surface surface-frame workspace-actions academic-event-actions">
+  {% include "schedules/schedule_workspace_contextual_action_header.html" with action_title=academic_event_action_title history_url=academic_event_history_url history_label=academic_event_history_label %}
+  <div class="surface-body"><form action="{{ academic_event_add_action }}" method="get" class="academic-event-add-form compact-inline-control-row">
+    <input type="hidden" name="academic_year" value="{{ academic_year }}">
+    <input type="hidden" name="view" value="{{ academic_event_view }}">
+    {% if academic_event_selected_month %}<input type="hidden" name="month" value="{{ academic_event_selected_month|date:'Y-m' }}">{% endif %}
+    <div class="compact-control-field academic-event-add-field"><label for="event-definition">Event</label><select id="event-definition" name="definition">{% for definition in academic_event_schedulable_definitions %}<option value="{{ definition.pk }}">{{ definition.base_name }} ({{ definition.expected_quarter }})</option>{% endfor %}</select></div>
+    <button type="submit"{% if not academic_event_schedulable_definitions %} disabled aria-describedby="no-schedulable-definitions"{% endif %}>Schedule</button>
+  </form>
+  {% if not academic_event_schedulable_definitions %}<p id="no-schedulable-definitions" class="meta">No event definitions are waiting for an annual resolution.</p>{% endif %}</div>
+</section>

@@ -1,0 +1,8 @@
+{% if alternatives.current %}
+  <section class="surface-frame surface-frame--raised assignment-current" aria-labelledby="current-assignment-heading">
+    <header class="surface-header"><h2 id="current-assignment-heading">Current assignment</h2></header>
+    <div class="surface-body"><div class="alternative">
+      <strong>{{ alternatives.current.physician.display_name }}</strong>
+    </div></div>
+  </section>
+{% endif %}

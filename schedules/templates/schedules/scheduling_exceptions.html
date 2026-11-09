@@ -1,0 +1,24 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width"><h1 class="form-page-title">Exceptions</h1><p>Current and retained acknowledgements remain visible for operational review.</p></header>
+  <section class="surface-frame surface-frame--raised" aria-labelledby="exceptions-history-heading">
+    <header class="surface-header"><h2 id="exceptions-history-heading">Acknowledged scheduling exceptions</h2></header>
+    <div class="surface-body">
+      {% if exceptions %}
+        <ol class="surface-content-stack">
+          {% for exception in exceptions %}
+            <li class="finding finding-{% if exception.current %}exception{% else %}preference{% endif %}">
+              <p><strong>{{ exception.finding_type }}</strong> · {{ exception.context }}</p>
+              <p>{{ exception.reason }}</p>
+              <p class="meta">Acknowledged by {{ exception.actor }} at {{ exception.acknowledged_at }}.</p>
+              {% if exception.current %}<p><strong>Acknowledged exception.</strong> The rule remains unmet.</p>{% elif exception.removed_at %}<p><strong>Override removed.</strong> Removed by {{ exception.removed_by }} at {{ exception.removed_at }}. This retained acknowledgement does not cover the current schedule.</p>{% else %}<p><strong>No longer applies.</strong> This retained acknowledgement does not cover the current schedule.</p>{% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <p>No scheduling exceptions have been acknowledged.</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

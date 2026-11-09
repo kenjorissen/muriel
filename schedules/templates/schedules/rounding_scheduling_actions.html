@@ -1,0 +1,4 @@
+<section class="workspace-surface surface-frame workspace-actions">
+  {% include "schedules/schedule_workspace_contextual_action_header.html" with history_url=rounding_history_url history_label="Rounding history" %}
+  <div class="surface-body surface-content-stack">{% if rounding_view == "normal" %}<p>Click the specific week you want to edit.</p>{% endif %}{% if rounding_primary_action_url or rounding_secondary_action_url %}<div class="contextual-action-row">{% if rounding_primary_action_url %}<a class="button-link" href="{{ rounding_primary_action_url }}">{{ rounding_primary_action_label }}</a>{% endif %}{% if rounding_secondary_action_url %}<a class="button-link" href="{{ rounding_secondary_action_url }}">{{ rounding_secondary_action_label }}</a>{% endif %}</div>{% endif %}</div>
+</section>

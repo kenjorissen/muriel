@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+git_common_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir)
+main_root=$(CDPATH= cd -- "$git_common_dir/.." && pwd -P)
+python="$main_root/.venv/bin/python"
+
+if [ ! -x "$python" ]; then
+    printf '%s\n' "Missing shared virtual environment at $main_root/.venv." >&2
+    exit 1
+fi
+
+cd "$repo_root"
+DJANGO_SETTINGS_MODULE=preceptor_project.test_settings "$python" manage.py test --tag=synthetic-scenario-integration

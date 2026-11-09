@@ -1,0 +1,4 @@
+<section class="workspace-surface surface-frame surface-tone--{{ work_remaining.tone }} workspace-work-summary" aria-labelledby="work-remaining-summary-heading">
+  <header class="surface-header"><h2 id="work-remaining-summary-heading">Work remaining</h2>{% if work_remaining.range_action %}<a class="button-link workspace-work-summary-action" href="{{ work_remaining.range_action.url }}">{{ work_remaining.range_action.label }}</a>{% endif %}</header>
+  <div class="surface-body surface-content-stack"><p>{{ work_remaining.prose }}</p></div>
+</section>

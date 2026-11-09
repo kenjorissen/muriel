@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}Edit {{ family.label }} lead time{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a class="form-return-link" href="{% url 'lead-time-workspace' %}">Back to lead times</a><h1 class="form-page-title">Edit {{ family.label }} lead time</h1></header>
+  <form method="post" class="form-layout form-presentation">{% csrf_token %}{% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}<section class="surface-frame surface-frame--raised"><div class="surface-body form-content-stack"><p><strong>Fixed anchor:</strong> {{ anchor }}</p>{% for field in form %}{% include "schedules/_form_field.html" with field=field helper=field.help_text %}{% endfor %}<div class="form-action-area"><button type="submit">Save changes</button></div></div></section></form>
+{% endblock %}

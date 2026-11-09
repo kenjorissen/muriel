@@ -1,0 +1,10 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="workspace-surface-stack" aria-label="Vacation schedule">
+    {% include "schedules/vacation_actions.html" %}
+    <section class="workspace-surface surface-frame vacation-list-section" aria-labelledby="vacation-list-heading">
+      <header class="surface-header"><h2 id="vacation-list-heading">Vacations</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=vacation_list_table %}</div>
+    </section>
+  </div>
+{% endblock %}

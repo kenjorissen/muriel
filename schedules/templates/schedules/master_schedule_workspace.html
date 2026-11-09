@@ -1,0 +1,10 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_week_navigation.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="workspace-surface-stack" aria-label="Master Schedule week">
+    <section class="workspace-surface surface-frame master-schedule-title-surface" aria-labelledby="master-schedule-heading">
+      <header class="surface-header master-schedule-title-row"><h1 id="master-schedule-heading">Master Schedule</h1><a href="{{ master_schedule_pdf_url }}">PDF</a></header>
+    </section>
+    {% include "schedules/master_schedule_grids.html" %}
+  </div>
+{% endblock %}

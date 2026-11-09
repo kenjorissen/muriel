@@ -1,0 +1,5 @@
+{% if precepting_legend %}
+  <aside class="calendar-status-legend" aria-label="Assignment finding legend">
+    {% for status in precepting_legend %}<span class="calendar-status-legend-item"><span class="calendar-status-legend-glyph{% if status.state == 'hard' or status.state == 'exception' or status.state == 'preference' %} calendar-finding-indicator{% endif %} {{ status.class_name }}" aria-hidden="true">{{ status.symbol }}</span><span class="calendar-status-legend-label">{{ status.name }}</span></span>{% endfor %}
+  </aside>
+{% endif %}

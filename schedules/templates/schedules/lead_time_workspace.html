@@ -1,0 +1,7 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <h1 class="visually-hidden">Lead Times</h1>
+  {% url "lead-time-history" as lead_time_history_url %}
+  <section class="workspace-surface surface-frame">{% include "schedules/schedule_workspace_contextual_action_header.html" with history_url=lead_time_history_url history_label="Lead-time history" %}<div class="surface-body surface-content-stack"><p>Organization-wide advance notice for work remaining. Each work family's Lead time determines its Attention starting date; the work family and fixed anchor are not configurable.</p>{% include "schedules/data_table.html" with table=lead_time_table %}</div></section>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_work_remaining %}{% include "schedules/work_remaining_summary.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <h1 class="visually-hidden">Preceptor Schedule list for {{ selected_month|date:"F Y" }}</h1>
+  <div class="workspace-surface-stack" aria-label="Preceptor Schedule list">
+    <section class="workspace-surface surface-frame preceptor-schedule-list-section" aria-labelledby="preceptor-schedule-list-heading">
+      <header class="surface-header"><h2 id="preceptor-schedule-list-heading">Shifts</h2></header><div class="surface-body"><div class="table-scroll-frame">
+        <table class="preceptor-schedule-list-table">
+          <thead><tr><th>Date</th><th>Period</th><th>Preceptor 1</th><th>Preceptor 2</th><th>Secondary</th><th>Late Doc</th><th>Findings</th><th>Week</th></tr></thead>
+          <tbody>{% for session in sessions %}
+            <tr>
+              <td><time datetime="{{ session.date|date:'Y-m-d' }}">{{ session.date|date:"D, M j" }}</time></td>
+              <td>{{ session.period_of_day }}</td>
+              {% for slot in session.assignment_slots %}<td class="preceptor-schedule-list-slot preceptor-schedule-list-slot--{{ slot.state }}{% if slot.finding_tone %} table-cell-tone--{{ slot.finding_tone }}{% endif %}" aria-label="{{ slot.accessible_label }}">{{ slot.display }}</td>{% endfor %}
+              <td class="preceptor-schedule-list-slot{% if session.late_doc_slot %} preceptor-schedule-list-slot--{{ session.late_doc_slot.state }}{% if session.late_doc_slot.finding_tone %} table-cell-tone--{{ session.late_doc_slot.finding_tone }}{% endif %}{% endif %}">{% if session.late_doc_slot %}{{ session.late_doc_slot.display }}{% endif %}</td>
+              <td class="preceptor-schedule-list-findings{% if session.finding_tone %} table-cell-tone--{{ session.finding_tone }}{% endif %}">{% for finding in session.findings %}<span class="table-cell-finding">{{ finding.message }}</span>{% endfor %}{% for finding in session.week_findings %}<span class="table-cell-finding">{{ finding.message }}</span>{% empty %}{% if not session.findings %}<span class="meta">None</span>{% endif %}{% endfor %}</td>
+              <td><a href="{{ session.detail_url }}" aria-label="Open {{ session.date|date:'F j, Y' }} {{ session.period_of_day }}">Open</a></td>
+            </tr>
+          {% empty %}<tr><td class="empty" colspan="8">No weekday sessions in {{ selected_month|date:"F Y" }}.</td></tr>{% endfor %}</tbody>
+        </table>
+      </div></div>
+    </section>
+  </div>
+{% endblock %}

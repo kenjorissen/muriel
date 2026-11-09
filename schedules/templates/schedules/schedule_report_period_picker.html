@@ -1,0 +1,5 @@
+{% if schedule_report_period_picker_period == "academic-year" %}
+  <select name="academic_year" aria-label="Academic year">{% for year in schedule_report_academic_year_choices %}<option value="{{ year }}"{% if schedule_report_academic_year == year %} selected{% endif %}>{{ year }}&ndash;{{ year|add:1 }}</option>{% endfor %}</select>
+{% else %}
+  <select name="calendar_year" aria-label="Calendar year">{% for year in schedule_report_calendar_year_choices %}<option value="{{ year }}"{% if schedule_report_calendar_year == year %} selected{% endif %}>{{ year }}</option>{% endfor %}</select>
+{% endif %}

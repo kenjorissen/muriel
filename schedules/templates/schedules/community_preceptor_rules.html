@@ -1,0 +1,11 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="workspace-surface-stack" aria-label="Community Precepting rules">
+    {% include "schedules/community_preceptor_actions.html" %}
+    <section class="workspace-surface surface-frame community-preceptor-rules-section">
+      <header class="surface-header"><h2>Rules</h2></header>
+      <div class="surface-body"><p>Rules are expected base commitments. They do not create Preceptor Assignments.</p>{% include "schedules/data_table.html" with table=community_preceptor_rules_table %}</div>
+    </section>
+  </div>
+{% endblock %}

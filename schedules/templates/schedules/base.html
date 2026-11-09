@@ -1,0 +1,98 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Physician Scheduling{% endblock %} | Muriel</title>
+  <link rel="stylesheet" href="{% static 'schedules/application.css' %}">
+</head>
+<body>
+  {% if staging_environment_marker %}
+    <div class="staging-environment-marker" role="status">{{ staging_environment_marker }}</div>
+  {% endif %}
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="site-header">
+    <div class="shell header-content">
+      <a class="brand" href="{% url 'master-schedule' %}" aria-label="Muriel Physician Scheduling home">
+        <img src="{% static 'schedules/images/random-health.png' %}" width="1935" height="812" alt="Random Health">
+        <span class="facility-label">Family Practice Clinic</span>
+      </a>
+      <div class="application-identity">
+        <strong class="application-name">Muriel</strong>
+        <span class="application-description">Physician Scheduling</span>
+      </div>
+      {% if request.user.is_authenticated and request.resolver_match.url_name != 'sign-in' %}
+        <div class="account-controls">
+            <span>Signed in as <strong>{{ request.user.get_username }}</strong></span>
+            {% if can_manage_accounts %}<a href="{% url 'account-workspace' %}">Accounts</a>{% endif %}
+            <a href="{% url 'password_change' %}">Change password</a>
+           <form action="{% url 'sign-out' %}" method="post">
+            {% csrf_token %}
+            <button class="quiet-button" type="submit">Sign out</button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
+    {% if request.user.is_authenticated and request.resolver_match.url_name != 'sign-in' %}
+      {% with path=request.path %}
+        <nav class="primary-navigation" aria-label="Global navigation">
+          <div class="shell">
+            <a href="{% url 'master-schedule' %}"{% if path|slice:':10' == '/schedule/' %} aria-current="page"{% endif %}>Schedule</a>
+            <a href="{% url 'monthly-workspace' %}"{% if path == '/' or path|slice:':15' == '/week/late-doc/' or path|slice:':6' == '/list/' or path|slice:':7' == '/solve/' or path|slice:':10' == '/sessions/' %} aria-current="page"{% endif %}>Precepting</a>
+            <a href="{% url 'rounding-workspace' %}"{% if path|slice:':10' == '/rounding/' %} aria-current="page"{% endif %}>Rounding</a>
+            <a href="{% url 'vacation-workspace' %}"{% if path|slice:':11' == '/vacations/' %} aria-current="page"{% endif %}>Vacation</a>
+            <a href="{% url 'academic-event-workspace' %}"{% if path|slice:':17' == '/academic-events/' or path|slice:':19' == '/event-definitions/' %} aria-current="page"{% endif %}>Academic Events</a>
+            <a href="{% url 'community-preceptor-workspace' %}"{% if path|slice:':22' == '/community-preceptors/' %} aria-current="page"{% endif %}>Community Precepting</a>
+            <a href="{% url 'interview-workspace' %}"{% if path|slice:':12' == '/interviews/' %} aria-current="page"{% endif %}>Interviews</a>
+            <a href="{% url 'physicians-directory' %}"{% if path|slice:':12' == '/physicians/' %} aria-current="page"{% endif %}>Physicians</a>
+            <a href="{% url 'schedule-reports' %}"{% if path|slice:':9' == '/reports/' %} aria-current="page"{% endif %}>Reports</a>
+          </div>
+        </nav>
+      {% endwith %}
+      <div class="physician-scope" role="region" aria-labelledby="physician-scope-heading">
+        <div class="shell physician-scope-content">
+          <div class="physician-scope-state" aria-live="polite">
+            <strong id="physician-scope-heading">Physician focus:</strong>
+            {% if physician_scope_selected %}
+              <span>Selected physicians: {% for physician in physician_scope_selected %}{{ physician.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}. Presentation only; schedule conclusions remain complete.</span>
+            {% else %}
+              <span>Everyone. Presentation only; schedule conclusions remain complete.</span>
+            {% endif %}
+          </div>
+          <div class="physician-scope-controls">
+            <details class="physician-scope-chooser">
+              <summary>Change physician focus</summary>
+              <form method="post" action="{% url 'physician-scope' %}">
+                {% csrf_token %}
+                <input type="hidden" name="return" value="{{ physician_scope_return }}">
+                <fieldset>
+                  <legend>Show selected physicians only</legend>
+                  <div class="physician-scope-choices">
+                    {% for physician in physician_scope_choices %}
+                      <label><input type="checkbox" name="physicians" value="{{ physician.pk }}"{% if physician.pk in physician_scope_selected_ids %} checked{% endif %}> {{ physician.display_name }}</label>
+                    {% endfor %}
+                  </div>
+                </fieldset>
+                <div class="physician-scope-actions">
+                  <button type="submit">Apply focus</button>
+                </div>
+              </form>
+            </details>
+            {% if physician_scope_selected %}
+              <form class="physician-scope-reset" method="post" action="{% url 'physician-scope' %}">
+                {% csrf_token %}
+                <input type="hidden" name="return" value="{{ physician_scope_return }}">
+                <button class="quiet-button" type="submit" name="reset" value="1">Everyone</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </header>
+  <main id="main-content" class="shell page-content{% block page_content_class %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

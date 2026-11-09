@@ -1,0 +1,19 @@
+[Unit]
+Description=Muriel daily PostgreSQL backup
+Requires=postgresql@18-main.service
+After=network-online.target postgresql@18-main.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=muriel
+Group=muriel
+EnvironmentFile=/etc/muriel/environment
+ExecStart=/srv/muriel/backup-database
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+StandardOutput=journal
+StandardError=journal

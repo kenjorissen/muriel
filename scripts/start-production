@@ -1,0 +1,80 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+python="$repo_root/.venv/bin/python"
+
+if [ "$(id -u)" -eq 0 ]; then
+    printf '%s\n' "start-production must run as an unprivileged service user." >&2
+    exit 1
+fi
+
+if [ ! -x "$python" ]; then
+    printf '%s\n' "Missing virtual environment at $repo_root/.venv." >&2
+    exit 1
+fi
+
+workers=${PRECEPTOR_GUNICORN_WORKERS:-2}
+timeout=${PRECEPTOR_GUNICORN_TIMEOUT:-60}
+graceful_timeout=${PRECEPTOR_GUNICORN_GRACEFUL_TIMEOUT:-30}
+settings_module=${PRECEPTOR_DJANGO_SETTINGS_MODULE:-preceptor_project.production_settings}
+socket=${PRECEPTOR_GUNICORN_SOCKET:-/run/muriel/gunicorn.sock}
+socket_umask=${PRECEPTOR_GUNICORN_SOCKET_UMASK:-0o007}
+bind=${PRECEPTOR_GUNICORN_BIND:-}
+
+validate_decimal() {
+    value=$1
+    setting=$2
+    case "$value" in
+        ''|*[!0-9]*)
+            printf '%s\n' "$setting must be a decimal integer." >&2
+            exit 1
+            ;;
+    esac
+}
+
+validate_decimal "$workers" PRECEPTOR_GUNICORN_WORKERS
+validate_decimal "$timeout" PRECEPTOR_GUNICORN_TIMEOUT
+validate_decimal "$graceful_timeout" PRECEPTOR_GUNICORN_GRACEFUL_TIMEOUT
+
+if [ "$workers" -lt 1 ] || [ "$workers" -gt 4 ]; then
+    printf '%s\n' "PRECEPTOR_GUNICORN_WORKERS must be between 1 and 4." >&2
+    exit 1
+fi
+if [ "$timeout" -lt 30 ] || [ "$timeout" -gt 120 ]; then
+    printf '%s\n' "PRECEPTOR_GUNICORN_TIMEOUT must be between 30 and 120." >&2
+    exit 1
+fi
+if [ "$graceful_timeout" -lt 15 ] || [ "$graceful_timeout" -gt 60 ]; then
+    printf '%s\n' "PRECEPTOR_GUNICORN_GRACEFUL_TIMEOUT must be between 15 and 60." >&2
+    exit 1
+fi
+case "$settings_module:$bind" in
+    preceptor_project.production_settings:)
+        case "$socket" in /run/muriel/*.sock) ;; *) printf '%s\n' "PRECEPTOR_GUNICORN_SOCKET must be a .sock path beneath /run/muriel." >&2; exit 1 ;; esac
+        case "$socket_umask" in 0o[0-7][0-7][0-7]) ;; *) printf '%s\n' "PRECEPTOR_GUNICORN_SOCKET_UMASK must be an octal value such as 0o007." >&2; exit 1 ;; esac
+        bind="unix:$socket"
+        gunicorn_umask="--umask $socket_umask"
+        ;;
+    preceptor_project.staging_settings:127.0.0.1:8082)
+        gunicorn_umask=
+        ;;
+    *)
+        printf '%s\n' "Only production's Unix socket or staging's 127.0.0.1:8082 binding is supported." >&2
+        exit 1
+        ;;
+esac
+
+cd "$repo_root"
+DJANGO_SETTINGS_MODULE=$settings_module
+export DJANGO_SETTINGS_MODULE
+exec "$python" -m gunicorn preceptor_project.wsgi:application \
+    --bind "$bind" \
+    --workers "$workers" \
+    --timeout "$timeout" \
+    --graceful-timeout "$graceful_timeout" \
+    $gunicorn_umask \
+    --access-logfile - \
+    --error-logfile - \
+    --capture-output

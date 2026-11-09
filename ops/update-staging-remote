@@ -1,0 +1,217 @@
+#!/bin/sh
+# Run the privileged staging update from the exact deployment archive.
+set -eu
+
+[ "$#" -eq 5 ] || {
+    printf '%s\n' 'update-staging: expected commit, archive, reset mode, staging host and origin.' >&2
+    exit 2
+}
+helper=$0
+commit=${1:-}
+artifact=${2:-}
+reset=${3:-}
+case "$commit" in
+    *[!0123456789abcdef]*|???????????????????????????????????????)
+        printf '%s\n' "update-staging: invalid deployment commit." >&2
+        exit 1
+        ;;
+esac
+case "$reset" in 0|1) ;; *) printf '%s\n' "update-staging: invalid reset mode." >&2; exit 1 ;; esac
+case "$helper" in
+    "/tmp/muriel-staging-${commit}."[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]].sh) ;;
+    *) printf '%s\n' "update-staging: unsafe deployment helper path." >&2; exit 1 ;;
+esac
+case "$artifact" in
+    "/tmp/muriel-staging-${commit}."[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]].tar) ;;
+    *) printf '%s\n' "update-staging: unsafe deployment archive path." >&2; exit 1 ;;
+esac
+[ -f "$helper" ] && [ ! -L "$helper" ] || { printf '%s\n' "update-staging: staged helper is missing or unsafe." >&2; exit 1; }
+[ -f "$artifact" ] && [ ! -L "$artifact" ] || { printf '%s\n' "update-staging: staged archive is missing or unsafe." >&2; exit 1; }
+tar -xOf "$artifact" ops/update-staging-remote | cmp -s - "$helper" || {
+    printf '%s\n' "update-staging: staged helper does not match its archive." >&2
+    exit 1
+}
+
+staging=$(mktemp -d "/tmp/muriel-staging-update-${commit}.XXXXXX")
+cleanup() {
+    status=$?
+    trap - EXIT HUP INT TERM
+    rm -rf -- "$staging"
+    rm -f -- "$artifact" "$helper"
+    exit "$status"
+}
+trap cleanup EXIT HUP INT TERM
+
+tar --extract --file "$artifact" --directory "$staging" --no-same-owner
+# The /tmp helper has no repository siblings. Validate using its verified archive,
+# overriding inherited sudo state with the literal nonsecret arguments.
+PRECEPTOR_STAGING_ALLOWED_HOST=$4
+PRECEPTOR_STAGING_CSRF_TRUSTED_ORIGIN=$5
+. "$staging/ops/require-staging-identity.sh"
+[ -x "$staging/ops/bootstrap-ubuntu" ] || { printf '%s\n' "update-staging: staged bootstrap is missing or not executable." >&2; exit 1; }
+run_staging_management() {
+    runuser -u muriel_staging -- sh -c '
+        set -a
+        . /etc/muriel-staging/environment
+        set +a
+        DJANGO_SETTINGS_MODULE=preceptor_project.staging_settings
+        export DJANGO_SETTINGS_MODULE
+        cd /srv/muriel-staging/current
+        exec /srv/muriel-staging/current/.venv/bin/python manage.py "$@"
+    ' sh "$@"
+}
+staging_bootstrap() {
+    PRECEPTOR_STAGING_ALLOWED_HOST=$staging_host \
+    PRECEPTOR_STAGING_CSRF_TRUSTED_ORIGIN=$staging_origin \
+        "$staging/ops/bootstrap-ubuntu" --instance staging "$@"
+}
+if staging_bootstrap --check; then
+    printf '%s\n' "update-staging: staging bootstrap is already converged."
+else
+    printf '%s\n' "update-staging: staging bootstrap diverged; applying only its fixed staging scope." >&2
+    staging_bootstrap --apply || {
+        printf '%s\n' "update-staging: bootstrap apply failed. Diagnose with: ops/bootstrap-ubuntu --instance staging --check" >&2
+        exit 1
+    }
+    staging_bootstrap --check || {
+        printf '%s\n' "update-staging: bootstrap did not converge. Diagnose with: ops/bootstrap-ubuntu --instance staging --check" >&2
+        exit 1
+    }
+fi
+
+current_release=$(readlink -f -- /srv/muriel-staging/current 2>/dev/null || :)
+if [ "$current_release" = "/srv/muriel-staging/releases/$commit" ] && \
+    [ -d "$current_release" ] && [ ! -L "$current_release" ]; then
+    printf '%s\n' "update-staging: staging release $commit is already current."
+    systemctl is-active --quiet muriel-staging
+else
+    /srv/muriel-staging/deploy-release "$commit" < "$artifact" || {
+        printf '%s\n' "update-staging: deployment failed. Diagnose with: sudo /srv/muriel-staging/deploy-release $commit" >&2
+        exit 1
+    }
+fi
+if [ "$reset" = 1 ]; then
+    run_staging_management reset_staging_synthetic --confirm || {
+        printf '%s\n' "update-staging: synthetic load failed. Diagnose with: sudo -u muriel_staging /srv/muriel-staging/current/.venv/bin/python /srv/muriel-staging/current/manage.py reset_staging_synthetic --confirm" >&2
+        exit 1
+    }
+    run_staging_management check_staging || {
+        printf '%s\n' "update-staging: post-load readiness check failed. Diagnose with: sudo -u muriel_staging /srv/muriel-staging/current/.venv/bin/python /srv/muriel-staging/current/manage.py check_staging" >&2
+        exit 1
+    }
+fi
+
+before=$staging/tailscale-before.json
+after=$staging/tailscale-after.json
+tailscale serve status --json > "$before" || {
+    printf '%s\n' "update-staging: could not inspect Serve state. Diagnose with: sudo tailscale serve status --json" >&2
+    exit 1
+}
+# Reuse the same local snapshot validation before mutation and after acquisition.
+validator=$staging/verify-staging-route.py
+cat > "$validator" <<'PY'
+import copy
+import json
+import sys
+
+route = sys.argv[1] + ":10000"
+
+
+def invalid_constant(value):
+    raise ValueError(f"invalid JSON constant {value}")
+
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key {key!r}")
+        result[key] = value
+    return result
+
+
+def load_state(path):
+    try:
+        with open(path, encoding="utf-8") as source:
+            state = json.load(source, parse_constant=invalid_constant, object_pairs_hook=unique_object)
+    except (ValueError, OSError, RecursionError) as error:
+        raise SystemExit(f"staging route verification: invalid captured JSON in {path}: {error}") from None
+    if not isinstance(state, dict):
+        raise SystemExit(f"staging route verification: {path}: expected a state object")
+    for section in ("TCP", "Web", "AllowFunnel"):
+        if section in state and not isinstance(state[section], dict):
+            raise SystemExit(f"staging route verification: {path}: {section} must be an object")
+    for section in ("TCP", "Web"):
+        for key, entry in state.get(section, {}).items():
+            if not isinstance(entry, dict):
+                raise SystemExit(f"staging route verification: {path}: {section}.{key} must be an object")
+            if section == "Web" and "Handlers" in entry:
+                handlers = entry["Handlers"]
+                if not isinstance(handlers, dict) or any(
+                    not isinstance(handler, dict) for handler in handlers.values()
+                ):
+                    raise SystemExit(f"staging route verification: {path}: Web.{key}.Handlers must contain handler objects")
+    if route in state.get("AllowFunnel", {}) and state["AllowFunnel"][route] is not False:
+        raise SystemExit("staging Funnel exposure is prohibited; permission must be absent or boolean false")
+    return state
+
+
+def structural_mismatch(expected, actual, path="$"):
+    if type(expected) is not type(actual):
+        return f"{path}: expected {type(expected).__name__}, got {type(actual).__name__}"
+    if isinstance(expected, dict):
+        if expected.keys() != actual.keys():
+            return f"{path}: expected keys {sorted(expected)}, got keys {sorted(actual)}"
+        for key in sorted(expected):
+            mismatch = structural_mismatch(expected[key], actual[key], f"{path}.{key}")
+            if mismatch:
+                return mismatch
+    elif isinstance(expected, list):
+        if len(expected) != len(actual):
+            return f"{path}: expected {len(expected)} items, got {len(actual)}"
+        for index, (left, right) in enumerate(zip(expected, actual)):
+            mismatch = structural_mismatch(left, right, f"{path}[{index}]")
+            if mismatch:
+                return mismatch
+    elif expected != actual:
+        return f"{path}: expected {expected!r}, got {actual!r}"
+    return None
+
+
+def without_staging_route(state):
+    state = copy.deepcopy(state)
+    for section, key in (("TCP", "10000"), ("Web", route), ("AllowFunnel", route)):
+        if section in state:
+            state[section].pop(key, None)
+    return state
+
+
+before = load_state(sys.argv[2])
+if len(sys.argv) == 4:
+    after = load_state(sys.argv[3])
+    for section, key, expected in (
+        ("TCP", "10000", {"HTTPS": True}),
+        ("Web", route, {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8082"}}}),
+    ):
+        mismatch = structural_mismatch(expected, after.get(section, {}).get(key), f"$.{section}.{key}")
+        if mismatch:
+            raise SystemExit(f"staging Serve route is not HTTPS port 10000 to 127.0.0.1:8082: {mismatch}")
+    mismatch = structural_mismatch(without_staging_route(before), without_staging_route(after))
+    if mismatch:
+        raise SystemExit(f"converging staging Serve changed a production Tailscale mapping: {mismatch}")
+PY
+python3.14 "$validator" "$staging_host" "$before"
+tailscale serve --bg --https=10000 http://127.0.0.1:8082 || {
+    printf '%s\n' "update-staging: could not persist the staging Serve route. Diagnose with: sudo tailscale serve status --json" >&2
+    exit 1
+}
+tailscale serve status --json > "$after" || {
+    printf '%s\n' "update-staging: could not verify the persisted Serve state. Diagnose with: sudo tailscale serve status --json" >&2
+    exit 1
+}
+python3.14 "$validator" "$staging_host" "$before" "$after"
+curl --fail --silent --show-error --max-time 10 "$staging_origin/health/" > /dev/null || {
+    printf 'update-staging: staging HTTPS health check failed. Diagnose with: curl -v %s/health/\n' "$staging_origin" >&2
+    exit 1
+}
+printf '%s\n' "update-staging: staging service and tailnet-only HTTPS route are verified."

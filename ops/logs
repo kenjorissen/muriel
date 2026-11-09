@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+. "$(dirname -- "$0")/require-ssh-target.sh"
+exec ssh -T -o BatchMode=yes "$MURIEL_SSH_TARGET" "journalctl --no-pager -u muriel -n 100"

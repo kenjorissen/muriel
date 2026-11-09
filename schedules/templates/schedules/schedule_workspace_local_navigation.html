@@ -1,0 +1,9 @@
+<nav class="workspace-local-navigation" aria-label="{{ schedule_workspace_label }} navigation">
+  {% for item in schedule_workspace_navigation %}
+    {% if item.deferred %}
+      <span class="workspace-local-navigation-deferred" aria-disabled="true">{{ item.label }}</span>
+    {% else %}
+      <a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.label }}</a>
+    {% endif %}
+  {% endfor %}
+</nav>

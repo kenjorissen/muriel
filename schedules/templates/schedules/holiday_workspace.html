@@ -1,0 +1,14 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_calendar_year_navigation.html" %}{% endblock %}
+{% block schedule_workspace_work_remaining %}{% include "schedules/work_remaining_summary.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="workspace-surface-stack" aria-label="Holiday schedule">
+    <section class="workspace-surface surface-frame workspace-actions holiday-actions">
+      {% include "schedules/schedule_workspace_contextual_action_header.html" with history_url=holiday_history_url history_label="Holiday history" %}
+    </section>
+    <section class="workspace-surface surface-frame holiday-list-section" aria-labelledby="holiday-list-heading">
+      <header class="surface-header"><h2 id="holiday-list-heading">Holidays for {{ holiday_calendar_year }}</h2></header>
+      <div class="surface-body">{% include "schedules/data_table.html" with table=holiday_occurrences_table %}</div>
+    </section>
+  </div>
+{% endblock %}

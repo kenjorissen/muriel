@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}{{ title }} | Accounts{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a class="form-return-link" href="{% url 'account-workspace' %}">Return to Account Administration</a><h1 class="form-page-title">{{ title }}</h1></header>
+  <section class="surface-frame surface-frame--raised"><header class="surface-header"><h2>Manual delivery mode</h2><p>No external email was sent. Deliver this prepared message only to the intended recipient.</p></header><div class="surface-body surface-content-stack"><p><strong>Copyable setup link</strong></p><input type="text" value="{{ delivery.setup_link }}" readonly aria-label="Setup link"><p><strong>Prepared recipient message</strong></p><pre>{{ delivery.message }}</pre></div></section>
+{% endblock %}

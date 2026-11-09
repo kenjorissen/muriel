@@ -1,0 +1,138 @@
+#!/bin/sh
+# Create one verified logical PostgreSQL backup and require its off-host copy.
+set -eu
+
+# Manual sudo invocations can inherit an operator directory that muriel cannot traverse.
+cd /
+
+usage() {
+    printf '%s\n' "Usage: $0 [--label daily|pre-deploy]" >&2
+    exit 2
+}
+
+label=daily
+if [ "$#" -gt 0 ]; then
+    [ "$#" -eq 2 ] && [ "$1" = --label ] || usage
+    label=$2
+fi
+case "$label" in
+    daily|pre-deploy) ;;
+    *) usage ;;
+esac
+
+[ "$(id -u)" -ne 0 ] || {
+    printf '%s\n' "backup-database must run as the unprivileged muriel service user." >&2
+    exit 1
+}
+
+environment_file=${MURIEL_ENVIRONMENT_FILE:-/etc/muriel/environment}
+if [ -f "$environment_file" ]; then
+    set -a
+    . "$environment_file"
+    set +a
+fi
+
+database=${PRECEPTOR_POSTGRES_NAME:-}
+backup_directory=${MURIEL_BACKUP_DIRECTORY:-/var/backups/muriel}
+offsite_host=${MURIEL_BACKUP_OFFSITE_HOST:-}
+offsite_directory=${MURIEL_BACKUP_OFFSITE_DIRECTORY:-}
+release_directory=${MURIEL_RELEASE_DIRECTORY:-/srv/muriel/current}
+
+fail() {
+    printf '%s\n' "backup-database: $*" >&2
+    exit 1
+}
+
+[ -n "$database" ] || fail "PRECEPTOR_POSTGRES_NAME is required"
+[ -d "$backup_directory" ] && [ ! -L "$backup_directory" ] || \
+    fail "backup directory is missing or unsafe"
+case "$offsite_host" in
+    ''|*[!A-Za-z0-9.@:_-]*) fail "MURIEL_BACKUP_OFFSITE_HOST is required and unsafe values are refused" ;;
+esac
+case "$offsite_directory" in
+    /*) ;;
+    *) fail "MURIEL_BACKUP_OFFSITE_DIRECTORY must be an absolute directory" ;;
+esac
+case "$offsite_directory" in
+    *[!A-Za-z0-9_./-]*) fail "MURIEL_BACKUP_OFFSITE_DIRECTORY contains unsafe characters" ;;
+esac
+
+umask 077
+timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+name=$label-$timestamp.dump
+dump=$backup_directory/$name
+metadata=$backup_directory/$name.metadata
+partial_dump=$dump.partial-$$
+partial_metadata=$metadata.partial-$$
+lock=$backup_directory/.backup-lock
+
+if ! mkdir "$lock" 2>/dev/null; then
+    lock_pid=$(cat "$lock/pid" 2>/dev/null || true)
+    case "$lock_pid" in
+        *[!0-9]*|'') ;;
+        *) kill -0 "$lock_pid" 2>/dev/null && fail "another backup is already running" ;;
+    esac
+    rm -f "$lock/pid"
+    rmdir "$lock" 2>/dev/null || fail "backup lock is unsafe"
+    mkdir "$lock" || fail "another backup is already running"
+fi
+printf '%s\n' "$$" > "$lock/pid"
+cleanup() {
+    rm -f "$partial_dump" "$partial_metadata" || true
+    rm -f "$lock/pid" || true
+    rmdir "$lock" 2>/dev/null || true
+}
+trap cleanup EXIT HUP INT TERM
+[ ! -e "$dump" ] && [ ! -L "$dump" ] && [ ! -e "$metadata" ] && [ ! -L "$metadata" ] || \
+    fail "refusing to replace an existing backup"
+
+resolved_release=$(readlink -f "$release_directory" 2>/dev/null || true)
+revision=${resolved_release##*/}
+case "$revision" in
+    ????????) revision=unknown ;;
+    *[!0123456789abcdef]*|???????????????????????????????????????) revision=unknown ;;
+esac
+
+PGCLUSTER=18/main pg_dump --host=/var/run/postgresql --port=5432 --format=custom \
+    --file="$partial_dump" "$database"
+PGCLUSTER=18/main pg_restore --host=/var/run/postgresql --port=5432 --list "$partial_dump" >/dev/null
+checksum=$(sha256sum "$partial_dump" | cut -d ' ' -f 1)
+printf '%s\n' \
+    'format=1' \
+    "dump=$name" \
+    "sha256=$checksum" \
+    "database=$database" \
+    "application_revision=$revision" \
+    "created_at=$timestamp" > "$partial_metadata"
+chmod 600 "$partial_dump" "$partial_metadata"
+mv "$partial_dump" "$dump"
+mv "$partial_metadata" "$metadata"
+
+# Publish off-host only after the local dump and its checksum metadata are complete.
+if ! ssh -o BatchMode=yes "$offsite_host" "mkdir -p -- $offsite_directory" || \
+    ! scp -o BatchMode=yes -p "$dump" \
+        "$offsite_host:$offsite_directory/$name.partial" || \
+    ! scp -o BatchMode=yes -p "$metadata" \
+        "$offsite_host:$offsite_directory/$name.metadata.partial" || \
+    ! ssh -o BatchMode=yes "$offsite_host" \
+        "mv -- $offsite_directory/$name.partial $offsite_directory/$name && mv -- $offsite_directory/$name.metadata.partial $offsite_directory/$name.metadata"; then
+    printf '%s\n' "backup-database: DEGRADED: local backup exists but required off-host copy failed." >&2
+    exit 1
+fi
+
+if [ "$label" = daily ]; then
+    if ! ssh -o BatchMode=yes "$offsite_host" \
+        "find $offsite_directory -type f -name 'daily-*.dump' -mtime +13 -delete && find $offsite_directory -type f -name 'daily-*.dump.metadata' -mtime +13 -delete"; then
+        printf '%s\n' "backup-database: DEGRADED: off-host copy succeeded but off-host retention failed." >&2
+        exit 1
+    fi
+    find "$backup_directory" -type f -name 'daily-*.dump' -mtime +13 -exec rm -f -- {} \;
+    find "$backup_directory" -type f -name 'daily-*.dump.metadata' -mtime +13 -exec rm -f -- {} \;
+fi
+
+trap - EXIT HUP INT TERM
+# TEXT-CONTRACT: backup-completion-report; consumers: ops/deploy-release.create_backup,
+# ops/reset-production-domain, and ops/clear-production-login-access. Scope: exact prefix,
+# filename, capitalization, punctuation, and separating space; command substitution strips
+# trailing newlines. Protecting test: schedules/tests/test_database_backup.py::DatabaseBackupTests.test_manual_backup_escapes_an_inaccessible_inherited_working_directory
+printf '%s\n' "Backup protected locally and off-host: $name"

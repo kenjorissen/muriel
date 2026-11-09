@@ -1,0 +1,7 @@
+{% if period_navigation_label %}<div class="period-navigation-control"><span class="period-navigation-label">{{ period_navigation_label }}</span>{% endif %}
+<nav class="toolbar period-navigation period-navigation-cluster{% if period_navigation_academic_year %} period-navigation--academic-year{% endif %}" aria-label="{{ period_navigation_aria_label }}">
+  {% if period_navigation_previous_url %}<a href="{{ period_navigation_previous_url }}" aria-label="Previous {{ period_navigation_period }}">&lsaquo;</a>{% else %}<span role="link" aria-disabled="true" aria-label="Previous {{ period_navigation_period }}">&lsaquo;</span>{% endif %}
+  {% include period_navigation_control_template %}
+  {% if period_navigation_next_url %}<a href="{{ period_navigation_next_url }}" aria-label="Next {{ period_navigation_period }}">&rsaquo;</a>{% else %}<span role="link" aria-disabled="true" aria-label="Next {{ period_navigation_period }}">&rsaquo;</span>{% endif %}
+</nav>
+{% if period_navigation_label %}</div>{% endif %}

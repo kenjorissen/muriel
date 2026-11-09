@@ -1,0 +1,11 @@
+{% extends "schedules/base.html" %}
+{% block title %}Edit {{ account.username }} | Accounts{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained"><a class="form-return-link" href="{% url 'account-workspace' %}">Return to Account Administration</a><h1 class="form-page-title">Edit {{ account.username }}</h1></header>
+  <form method="post" class="form-layout form-presentation account-form">{% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="account-identity-heading"><header class="surface-header"><h2 id="account-identity-heading">Account</h2><p>Password and Django administrator controls are managed outside this workspace.</p></header><div class="surface-body"><div class="form-field-grid account-form-grid">{% include "schedules/_form_field.html" with field=form.username %}{% include "schedules/_form_field.html" with field=form.email %}{% include "schedules/_form_checkbox.html" with field=form.is_active %}</div></div></section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="account-authority-heading"><header class="surface-header"><h2 id="account-authority-heading">Workspace authority and identity</h2></header><div class="surface-body"><div class="form-field-grid account-form-grid">{% include "schedules/_form_checkbox.html" with field=form.scheduling_administrator %}{% include "schedules/_form_field.html" with field=form.physician %}</div></div></section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="account-notes-heading"><header class="surface-header"><h2 id="account-notes-heading">Actions</h2></header><div class="surface-body form-content-stack">{% include "schedules/_form_field.html" with field=form.reason helper=form.reason.help_text %}<div class="form-action-area"><button type="submit">Save account</button><a href="{% url 'account-workspace' %}">Cancel</a></div></div></section>
+  </form>
+{% endblock %}

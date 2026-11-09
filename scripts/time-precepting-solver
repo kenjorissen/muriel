@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+git_common_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir)
+main_root=$(CDPATH= cd -- "$git_common_dir/.." && pwd -P)
+python="$main_root/.venv/bin/python"
+
+if [ ! -x "$python" ]; then
+    printf '%s\n' "Missing shared virtual environment at $main_root/.venv." >&2
+    exit 1
+fi
+
+runtime_dir=$(mktemp -d /tmp/muriel-solver-timing.XXXXXX)
+cleanup() {
+    rm -rf -- "$runtime_dir"
+}
+trap cleanup EXIT HUP INT TERM
+
+database="$runtime_dir/db.sqlite3"
+printf '%s\n' \
+    'import os' \
+    'from preceptor_project.settings import *  # noqa: F403' \
+    'DATABASES["default"]["NAME"] = os.environ["MURIEL_TIMING_DATABASE"]  # noqa: F405' \
+    > "$runtime_dir/timing_settings.py"
+
+cd "$repo_root"
+PYTHONPATH="$runtime_dir" MURIEL_TIMING_DATABASE="$database" \
+    DJANGO_SETTINGS_MODULE=timing_settings "$python" manage.py migrate --noinput >/dev/null
+PYTHONPATH="$runtime_dir" MURIEL_TIMING_DATABASE="$database" \
+    DJANGO_SETTINGS_MODULE=timing_settings "$python" manage.py shell -c \
+    'from schedules.management.commands.reset_demo import seed_demo_data; seed_demo_data()' >/dev/null
+PYTHONPATH="$runtime_dir" MURIEL_TIMING_DATABASE="$database" \
+    DJANGO_SETTINGS_MODULE=timing_settings "$python" manage.py time_precepting_solver "$@"

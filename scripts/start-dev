@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+main_worktree=$(git -C "$repo_root" worktree list --porcelain | while IFS= read -r line; do
+    case "$line" in
+        worktree\ *) candidate=${line#worktree } ;;
+        "branch refs/heads/main") printf '%s\n' "$candidate"; exit 0 ;;
+    esac
+done)
+
+if [ -z "$main_worktree" ] || [ "$repo_root" != "$main_worktree" ]; then
+    printf '%s\n' "start-dev must be run from the canonical main worktree." >&2
+    exit 1
+fi
+
+python="$repo_root/.venv/bin/python"
+if [ ! -x "$python" ]; then
+    printf '%s\n' "Missing virtual environment at $repo_root/.venv. Create it before starting the application." >&2
+    exit 1
+fi
+
+bind_address=${PRECEPTOR_BIND_ADDRESS:-127.0.0.1}
+cd "$repo_root"
+printf '%s\n' "Development server only. For production, follow docs/production.md." >&2
+"$python" manage.py migrate
+exec "$python" manage.py runserver "$bind_address:8000"

@@ -1,0 +1,8 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}
+  {% include "schedules/schedule_workspace_academic_year_month_navigation.html" %}
+{% endblock %}
+{% block schedule_workspace_work_remaining %}{% include "schedules/work_remaining_summary.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  {% include "schedules/schedule_workspace_surface_stack.html" with schedule_workspace_surface_content_template="schedules/academic_event_calendar_surfaces.html" %}
+{% endblock %}

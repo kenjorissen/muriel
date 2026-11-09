@@ -1,0 +1,345 @@
+#!/bin/sh
+# Prepare only the isolated host prerequisites for synthetic Muriel staging.
+set -eu
+umask 077
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+# Validate explicit intended identity before inspecting or changing host state.
+. "$script_dir/require-staging-identity.sh"
+mode=
+root=/
+
+usage() {
+    printf '%s\n' "Usage: sudo $0 --check|--apply [--root DIRECTORY]" >&2
+    exit 2
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --check|--dry-run)
+            [ -z "$mode" ] || usage
+            mode=check
+            ;;
+        --apply)
+            [ -z "$mode" ] || usage
+            mode=apply
+            ;;
+        --root)
+            [ "$#" -ge 2 ] || usage
+            root_argument=$2
+            shift
+            ;;
+        *) usage ;;
+    esac
+    shift
+done
+[ -n "$mode" ] || usage
+
+if [ -n "${root_argument:-}" ]; then
+    case "$root_argument" in /*) ;; *) usage ;; esac
+    [ -d "$root_argument" ] && [ ! -L "$root_argument" ] || {
+        printf '%s\n' "--root must be an existing, non-symlink directory." >&2
+        exit 2
+    }
+    root=$(CDPATH= cd -- "$root_argument" && pwd -P)
+fi
+[ "$root" != / ] || [ "$(id -u)" -eq 0 ] || {
+    printf '%s\n' "Run this bootstrap through sudo." >&2
+    exit 1
+}
+
+host_path() {
+    [ "$root" = / ] && printf '%s\n' "$1" || printf '%s%s\n' "$root" "$1"
+}
+
+fail() {
+    printf '%s\n' "staging bootstrap: $*" >&2
+    exit 1
+}
+
+report_problem() {
+    printf '%s\n' "MISSING OR DIVERGENT: $*" >&2
+    problems=1
+}
+
+require_safe_path() {
+    path=$1
+    if [ "$root" = / ]; then
+        case "$path" in /*) ;; *) fail "refusing path outside bootstrap root: $path" ;; esac
+    else
+        case "$path" in "$root"|"$root"/*) ;; *) fail "refusing path outside bootstrap root: $path" ;; esac
+    fi
+    while [ "$path" != "$root" ]; do
+        [ ! -L "$path" ] || fail "refusing symlinked managed path: $path"
+        path=${path%/*}
+        [ -n "$path" ] || path=/
+    done
+}
+
+safe_directory() {
+    directory=$1 owner=$2 group=$3 permissions=$4
+    require_safe_path "$directory"
+    [ ! -e "$directory" ] || [ -d "$directory" ] || fail "managed directory is not a directory: $directory"
+    mkdir -p "$directory"
+    chown "$owner:$group" "$directory"
+    chmod "$permissions" "$directory"
+}
+
+directory_matches() {
+    [ -d "$1" ] && [ ! -L "$1" ] && [ "$(stat -c '%U:%G:%a' "$1")" = "$2:$3:$4" ]
+}
+
+install_service() {
+    destination=$(host_path /etc/systemd/system/muriel-staging.service)
+    require_safe_path "$destination"
+    [ ! -e "$destination" ] || [ -f "$destination" ] || fail "managed service file is not regular: $destination"
+    if [ ! -f "$destination" ] || ! cmp -s "$repo_root/ops/systemd/muriel-staging.service" "$destination"; then
+        temporary=$(mktemp "$destination.tmp.XXXXXX")
+        cp "$repo_root/ops/systemd/muriel-staging.service" "$temporary"
+        chown root:root "$temporary"
+        chmod 644 "$temporary"
+        mv -f "$temporary" "$destination"
+    fi
+}
+
+install_deploy_helper() {
+    destination=$(host_path /srv/muriel-staging/deploy-release)
+    require_safe_path "$destination"
+    [ ! -e "$destination" ] || [ -f "$destination" ] || fail "managed deploy helper is not regular: $destination"
+    if [ ! -f "$destination" ] || ! cmp -s "$repo_root/ops/deploy-staging-release" "$destination"; then
+        temporary=$(mktemp "$destination.tmp.XXXXXX")
+        cp "$repo_root/ops/deploy-staging-release" "$temporary"
+        chown root:root "$temporary"
+        chmod 755 "$temporary"
+        mv -f "$temporary" "$destination"
+    fi
+}
+
+install_superuser_helper() {
+    destination=$(host_path /srv/muriel-staging/create-superuser)
+    require_safe_path "$destination"
+    [ ! -e "$destination" ] || [ -f "$destination" ] || fail "managed superuser helper is not regular: $destination"
+    if [ ! -f "$destination" ] || ! cmp -s "$repo_root/ops/create-staging-superuser" "$destination"; then
+        temporary=$(mktemp "$destination.tmp.XXXXXX")
+        cp "$repo_root/ops/create-staging-superuser" "$temporary"
+        chown root:root "$temporary"
+        chmod 755 "$temporary"
+        mv -f "$temporary" "$destination"
+    fi
+}
+
+check_service() {
+    service=$(host_path /etc/systemd/system/muriel-staging.service)
+    [ -f "$service" ] && [ ! -L "$service" ] && \
+        cmp -s "$repo_root/ops/systemd/muriel-staging.service" "$service" && \
+        [ "$(stat -c '%U:%G:%a' "$service")" = root:root:644 ] || \
+        report_problem "staging systemd unit is missing or divergent"
+}
+
+check_deploy_helper() {
+    helper=$(host_path /srv/muriel-staging/deploy-release)
+    [ -f "$helper" ] && [ ! -L "$helper" ] && \
+        cmp -s "$repo_root/ops/deploy-staging-release" "$helper" && \
+        [ "$(stat -c '%U:%G:%a' "$helper")" = root:root:755 ] || \
+        report_problem "staging deploy helper is missing or divergent"
+}
+
+check_superuser_helper() {
+    helper=$(host_path /srv/muriel-staging/create-superuser)
+    [ -f "$helper" ] && [ ! -L "$helper" ] && \
+        cmp -s "$repo_root/ops/create-staging-superuser" "$helper" && \
+        [ "$(stat -c '%U:%G:%a' "$helper")" = root:root:755 ] || \
+        report_problem "staging superuser helper is missing or divergent"
+}
+
+postgres_query() {
+    runuser -u postgres -- psql --cluster=18/main --host=/var/run/postgresql --port=5432 \
+        -v ON_ERROR_STOP=1 -d postgres -tAc "$1"
+}
+
+ensure_database() {
+    role=$(postgres_query "SELECT rolcanlogin::text || ':' || (rolpassword IS NULL)::text || ':' || rolsuper::text || ':' || rolcreatedb::text FROM pg_authid WHERE rolname = 'muriel_staging';")
+    case "$role" in
+        '') postgres_query 'CREATE ROLE muriel_staging LOGIN' ;;
+        true:true:false:false) ;;
+        *) fail "PostgreSQL role muriel_staging must be login-enabled, passwordless, non-superuser, and without CREATEDB." ;;
+    esac
+    owner=$(postgres_query "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'muriel_staging';")
+    case "$owner" in
+        '') postgres_query 'CREATE DATABASE muriel_staging OWNER muriel_staging' ;;
+        muriel_staging) ;;
+        *) fail "PostgreSQL database muriel_staging has a different owner and will not be changed." ;;
+    esac
+}
+
+check_database() {
+    role=$(postgres_query "SELECT rolcanlogin::text || ':' || (rolpassword IS NULL)::text || ':' || rolsuper::text || ':' || rolcreatedb::text FROM pg_authid WHERE rolname = 'muriel_staging';" 2>/dev/null || true)
+    [ "$role" = true:true:false:false ] || report_problem "least-privileged PostgreSQL role muriel_staging is missing or divergent"
+    owner=$(postgres_query "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'muriel_staging';" 2>/dev/null || true)
+    [ "$owner" = muriel_staging ] || report_problem "PostgreSQL database muriel_staging is missing or has a different owner"
+}
+
+ensure_identity() {
+    getent group muriel_staging >/dev/null 2>&1 || groupadd --system muriel_staging
+    account=$(getent passwd muriel_staging 2>/dev/null || true)
+    case "$account" in
+        '') useradd --system --gid muriel_staging --home-dir /srv/muriel-staging --shell /usr/sbin/nologin --no-create-home muriel_staging ;;
+        *:/srv/muriel-staging:/usr/sbin/nologin) ;;
+        *) fail "muriel_staging service identity has an unexpected home or shell" ;;
+    esac
+}
+
+check_identity() {
+    getent group muriel_staging >/dev/null 2>&1 || report_problem "system group muriel_staging is missing"
+    account=$(getent passwd muriel_staging 2>/dev/null || true)
+    case "$account" in *:/srv/muriel-staging:/usr/sbin/nologin) ;; *) report_problem "locked-down muriel_staging service identity is missing or divergent" ;; esac
+}
+
+check_directories() {
+    while IFS=: read -r path owner group permissions; do
+        directory_matches "$(host_path "$path")" "$owner" "$group" "$permissions" || report_problem "staging directory is missing or unsafe: $path"
+    done <<'DIRECTORIES'
+/srv/muriel-staging:root:muriel_staging:750
+/srv/muriel-staging/releases:muriel_staging:muriel_staging:750
+/srv/muriel-staging/shared:muriel_staging:muriel_staging:750
+/srv/muriel-staging/shared/pip-cache:muriel_staging:muriel_staging:700
+/srv/muriel-staging/shared/static:muriel_staging:muriel_staging:750
+/etc/muriel-staging:root:muriel_staging:750
+DIRECTORIES
+}
+
+apply_directories() {
+    while IFS=: read -r path owner group permissions; do
+        safe_directory "$(host_path "$path")" "$owner" "$group" "$permissions"
+    done <<'DIRECTORIES'
+/srv/muriel-staging:root:muriel_staging:750
+/srv/muriel-staging/releases:muriel_staging:muriel_staging:750
+/srv/muriel-staging/shared:muriel_staging:muriel_staging:750
+/srv/muriel-staging/shared/pip-cache:muriel_staging:muriel_staging:700
+/srv/muriel-staging/shared/static:muriel_staging:muriel_staging:750
+/etc/muriel-staging:root:muriel_staging:750
+DIRECTORIES
+}
+
+environment_file=$(host_path /etc/muriel-staging/environment)
+
+environment_values_match() {
+    [ -f "$environment_file" ] && [ ! -L "$environment_file" ] || return 1
+    secret=
+    host=
+    origin=
+    database=
+    role=
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            ''|'#'*) continue ;;
+            *=*) ;;
+            *) return 1 ;;
+        esac
+        name=${line%%=*}
+        value=${line#*=}
+        case "$name" in
+            PRECEPTOR_STAGING_SECRET_KEY)
+                [ -z "$secret" ] || return 1
+                secret=$value
+                ;;
+            PRECEPTOR_STAGING_ALLOWED_HOST)
+                [ -z "$host" ] || return 1
+                host=$value
+                ;;
+            PRECEPTOR_STAGING_CSRF_TRUSTED_ORIGIN)
+                [ -z "$origin" ] || return 1
+                origin=$value
+                ;;
+            PRECEPTOR_STAGING_POSTGRES_NAME)
+                [ -z "$database" ] || return 1
+                database=$value
+                ;;
+            PRECEPTOR_STAGING_POSTGRES_USER)
+                [ -z "$role" ] || return 1
+                role=$value
+                ;;
+            *) return 1 ;;
+        esac
+    done < "$environment_file"
+    [ "${#secret}" -ge 50 ] && [ "$secret" = "${secret#django-insecure-}" ] && \
+        [ "$host" = "$staging_host" ] && \
+        [ "$origin" = "$staging_origin" ] && \
+        [ "$database" = muriel_staging ] && [ "$role" = muriel_staging ]
+}
+
+environment_matches() {
+    [ -f "$environment_file" ] && [ ! -L "$environment_file" ] && \
+        [ "$(stat -c '%U:%G:%a' "$environment_file")" = root:muriel_staging:640 ] && \
+        environment_values_match
+}
+
+check_environment() {
+    require_safe_path "$environment_file"
+    if [ ! -e "$environment_file" ] && [ ! -L "$environment_file" ]; then
+        report_problem "staging environment file is missing: /etc/muriel-staging/environment"
+    elif ! environment_matches; then
+        report_problem "staging environment file is divergent or unsafe and will not be changed"
+    fi
+}
+
+install_environment() {
+    require_safe_path "$environment_file"
+    if [ -e "$environment_file" ] || [ -L "$environment_file" ]; then
+        environment_matches || fail "staging environment file is divergent or unsafe and will not be changed"
+        return
+    fi
+
+    temporary=$(mktemp "$environment_file.tmp.XXXXXX") || \
+        fail "could not create staging environment file"
+    secret=$(od -An -N 64 -tx1 /dev/urandom | tr -d ' \n') || {
+        rm -f "$temporary"
+        fail "could not generate staging Django secret"
+    }
+    [ "${#secret}" -eq 128 ] || {
+        rm -f "$temporary"
+        fail "could not generate staging Django secret"
+    }
+    printf '%s\n' \
+        "PRECEPTOR_STAGING_SECRET_KEY=$secret" \
+        "PRECEPTOR_STAGING_ALLOWED_HOST=$staging_host" \
+        "PRECEPTOR_STAGING_CSRF_TRUSTED_ORIGIN=$staging_origin" \
+        'PRECEPTOR_STAGING_POSTGRES_NAME=muriel_staging' \
+        'PRECEPTOR_STAGING_POSTGRES_USER=muriel_staging' > "$temporary"
+    chown root:muriel_staging "$temporary"
+    chmod 640 "$temporary"
+    mv -f "$temporary" "$environment_file"
+}
+
+problems=0
+check_identity
+check_directories
+check_environment
+check_service
+check_deploy_helper
+check_superuser_helper
+check_database
+if [ "$mode" = check ]; then
+    [ "$problems" -eq 0 ] || exit 1
+    printf '%s\n' "Muriel staging host bootstrap prerequisites match the repository configuration."
+    exit 0
+fi
+
+# Refuse an existing unsafe environment before changing any host prerequisites.
+# Absence is allowed: its service identity and directories may not exist yet.
+require_safe_path "$environment_file"
+if [ -e "$environment_file" ] || [ -L "$environment_file" ]; then
+    environment_matches || fail "staging environment file is divergent or unsafe and will not be changed"
+fi
+
+ensure_identity
+apply_directories
+install_environment
+systemctl enable --now postgresql@18-main
+ensure_database
+install_service
+install_deploy_helper
+install_superuser_helper
+systemctl daemon-reload
+printf '%s\n' "Muriel staging host bootstrap prerequisites are installed."

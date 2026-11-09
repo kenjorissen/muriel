@@ -1,0 +1,11 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+  <div class="workspace-surface-stack" aria-label="Community Precepting schedule">
+    {% include "schedules/community_preceptor_actions.html" %}
+    <section class="workspace-surface surface-frame community-preceptor-list-section">
+      <header class="surface-header"><h2>Shifts</h2></header>
+      <div class="surface-body">{% include "schedules/data_table.html" with table=community_preceptor_list_table %}</div>
+    </section>
+  </div>
+{% endblock %}

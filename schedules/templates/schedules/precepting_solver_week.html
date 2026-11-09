@@ -1,0 +1,8 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+<div class="workspace-surface-stack" aria-label="Proposed Precepting week">
+  <section class="workspace-surface surface-frame {% if not current %}surface-tone--danger{% endif %}"><header class="surface-header"><h1>Proposed week</h1><a href="{% url 'precepting-solver-review' proposal.pk %}?view=proposed">Back to proposed schedule</a></header><div class="surface-body surface-content-stack"><p>{{ week_start }} through {{ week_end }}.</p>{% if stale_message %}<p><strong>{{ stale_message }}</strong></p>{% endif %}{% if not current %}<p>This proposal is read-only.</p>{% endif %}</div></section>
+  {% include "schedules/schedule_workspace_calendar_frame.html" with schedule_workspace_calendar_template="schedules/preceptor_week_calendar.html" %}
+</div>
+{% endblock %}

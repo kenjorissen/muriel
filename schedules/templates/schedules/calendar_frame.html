@@ -1,0 +1,11 @@
+<div class="{% if calendar_frame_workspace %}workspace-surface surface-frame {% endif %}calendar-scroll-frame">
+  {% include calendar_surface_template %}
+</div>
+{% if calendar.precepting_legend %}
+  <div class="calendar-status-legends">{% include "schedules/precepting_calendar_legend.html" with precepting_legend=calendar.precepting_legend %}</div>
+{% elif calendar_frame_combined_legend %}
+  {% if calendar.legend or calendar.finding_legend %}<div class="calendar-status-legends">{% include "schedules/calendar_status_legend.html" with calendar_status_legend=calendar.legend %}{% include "schedules/calendar_finding_legend.html" with finding_legend=calendar.finding_legend %}</div>{% endif %}
+{% else %}
+  {% include "schedules/calendar_status_legend.html" with calendar_status_legend=calendar.legend %}
+  {% include "schedules/calendar_finding_legend.html" with finding_legend=calendar.finding_legend %}
+{% endif %}

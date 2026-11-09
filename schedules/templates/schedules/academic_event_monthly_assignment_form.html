@@ -1,0 +1,53 @@
+{% extends "schedules/base.html" %}
+{% load static %}
+{% block title %}Edit Academic Event Assignments | Academic Event Schedule{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained">
+    <a class="form-return-link" href="{{ academic_event_return_url }}">Return to Academic Events</a>
+    <h1 class="form-page-title">Edit Academic Event Assignments</h1>
+  </header>
+  <form method="post" action="{{ form_action }}" class="academic-event-form form-layout form-presentation" data-academic-event-assignment-form>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="surface-frame surface-frame--raised" aria-labelledby="event-section-heading">
+      <header class="surface-header">
+        <h2 id="event-section-heading">Rule-owned event details</h2>
+        <p>Rule management owns dates and coverage. <a href="{{ rule_management_url }}">Manage monthly rule</a></p>
+      </header>
+      <div class="surface-body">
+        <div class="form-field-grid form-field-grid--event">
+          <div class="form-field-group form-read-only-value"><span class="form-field-label">Event</span><span>{{ event.title }}</span></div>
+          <div class="form-field-group form-read-only-value"><span class="form-field-label">Academic year</span><span>{{ event.academic_year }}-{{ event.academic_year|add:1 }}</span></div>
+          <div class="form-field-group form-read-only-value"><span class="form-field-label">Date</span><span>{{ event.date_ranges_label }}</span></div>
+          <div class="form-field-group form-read-only-value"><span class="form-field-label">Affected coverage</span><span>{{ event.presentation_coverage_label }}</span></div>
+          {% if event.all_available_faculty %}
+            <div class="form-field-group form-read-only-value"><span class="form-field-label">Assigned physicians</span><span>All available Faculty</span></div>
+          {% else %}
+            <div class="form-field-group form-read-only-value"><span class="form-field-label">Required participants</span><span>{{ event.required_participant_count }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="physicians-section-heading">
+      <header class="surface-header"><h2 id="physicians-section-heading">Assigned physicians</h2></header>
+      <div class="surface-body form-content-stack">
+        <div class="academic-event-all-faculty">
+          <label for="{{ form.all_available_faculty.id_for_label }}">{{ form.all_available_faculty.label }}:</label>
+          {{ form.all_available_faculty }}
+          <small>{{ form.all_available_faculty.help_text }}</small>
+          {{ form.all_available_faculty.errors }}
+        </div>
+        {% include "schedules/physician_picker.html" with field=form.participants selection_instructions="Choose the physicians participating in this event." %}
+      </div>
+    </section>
+    <section class="surface-frame surface-frame--raised" aria-labelledby="actions-section-heading">
+      <header class="surface-header"><h2 id="actions-section-heading">Actions</h2></header>
+      <div class="surface-body form-content-stack">
+        {% include "schedules/_form_field.html" with field=form.reason field_classes="form-field-group--full form-field-group--compact-note" helper=form.reason.help_text %}
+        <div class="form-action-area"><button type="submit">Save assignments</button><a href="{{ academic_event_return_url }}">Return to Academic Events</a><a href="{% url 'academic-event-history' %}">Academic Event History</a></div>
+      </div>
+    </section>
+  </form>
+  <script src="{% static 'schedules/physicians-picker.js' %}" defer></script>
+  <script src="{% static 'schedules/academic-event-form.js' %}" defer></script>
+{% endblock %}

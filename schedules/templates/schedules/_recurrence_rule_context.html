@@ -1,0 +1,10 @@
+<section class="surface-frame surface-frame--raised recurrence-rule-context" aria-labelledby="existing-rules-heading">
+  <header class="surface-header"><h2 id="existing-rules-heading">Existing rules</h2><p>{{ recurrence_overlap_guidance|default:"Only one effective rule per weekday can apply at a time. Save to check conflicts." }}</p></header>
+  <div class="surface-body">
+    {% if recurrence_rules %}
+      {% include "schedules/data_table.html" with table=recurrence_rule_context_table %}
+    {% else %}
+      <p class="form-page-helper">No retained rules for this physician.</p>
+    {% endif %}
+  </div>
+</section>

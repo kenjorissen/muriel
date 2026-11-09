@@ -1,0 +1,10 @@
+<nav class="toolbar period-navigation period-navigation-cluster" aria-label="Week navigation">
+  <a href="{{ schedule_workspace_previous_period_url }}" aria-label="Previous week">&lsaquo;</a>
+  <form class="period-navigation-form period-navigation-picker" action="{{ schedule_workspace_period_picker_action }}" method="get" data-calendar-period-picker>
+    {% for name, value in schedule_workspace_period_picker_preserved_query.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <label class="visually-hidden" for="schedule-workspace-date">Choose date</label>
+    <input id="schedule-workspace-date" type="date" name="date" value="{{ schedule_workspace_selected_date|date:'Y-m-d' }}" data-calendar-period-picker-input>
+    <noscript><button type="submit">Open week</button></noscript>
+  </form>
+  <a href="{{ schedule_workspace_next_period_url }}" aria-label="Next week">&rsaquo;</a>
+</nav>

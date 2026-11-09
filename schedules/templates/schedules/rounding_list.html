@@ -1,0 +1,15 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% include "schedules/schedule_workspace_month_navigation.html" %}{% endblock %}
+{% block schedule_workspace_work_remaining %}{% include "schedules/work_remaining_summary.html" %}{% endblock %}
+{% block schedule_workspace_content %}
+<div class="workspace-surface-stack" aria-label="Rounding schedule">
+  {% include "schedules/rounding_scheduling_actions.html" %}
+    <section class="workspace-surface surface-frame rounding-list-section" aria-labelledby="rounding-list-heading">
+      <header class="surface-header"><h2 id="rounding-list-heading">Rounding Shifts</h2></header><div class="surface-body">{% include "schedules/data_table.html" with table=rounding_list_table %}</div>
+  </section>
+  <section class="workspace-surface surface-frame rounding-casual-summary" aria-labelledby="rounding-casual-summary-heading">
+    <header class="surface-header"><h2 id="rounding-casual-summary-heading">Casual rounding this month</h2></header>
+    <div class="surface-body surface-content-stack">{% if rounding_projection.list_rows %}<p>Casual coverage is shown with its normal rounding week. It has no separate completeness requirement.</p>{% endif %}</div>
+  </section>
+</div>
+{% endblock %}

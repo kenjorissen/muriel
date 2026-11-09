@@ -1,0 +1,192 @@
+#!/bin/sh
+# Reconcile and update only the isolated staging instance from one exact revision.
+set -eu
+set -f
+umask 077
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+
+usage() {
+    printf '%s\n' "Usage: $0 TARGET [--candidate] [--reset-and-load] (TARGET must equal MURIEL_SSH_TARGET)" >&2
+    exit 2
+}
+
+target=
+target_count=0
+candidate=0
+reset=0
+for argument in "$@"; do
+    case "$argument" in
+        --candidate)
+            [ "$candidate" -eq 0 ] || usage
+            candidate=1
+            ;;
+        --reset-and-load)
+            [ "$reset" -eq 0 ] || usage
+            reset=1
+            ;;
+        -* ) usage ;;
+        *)
+            [ "$target_count" -eq 0 ] || usage
+            target_count=1
+            target=$argument
+            ;;
+    esac
+done
+[ "$target_count" -eq 1 ] || usage
+# Validate only the parsed destination, not mode flags or later Candidate ref records.
+set -- "$target"
+. "$script_dir/require-ssh-target.sh"
+ssh_target=$MURIEL_SSH_TARGET
+. "$script_dir/require-staging-identity.sh"
+
+if [ "$candidate" -eq 1 ] && [ "$reset" -eq 1 ]; then
+    printf '%s\n' "Staging Candidate deployment preserves data and cannot use --reset-and-load." >&2
+    exit 2
+fi
+
+if [ -n "$(git -C "$repo_root" status --porcelain --untracked-files=all)" ]; then
+    printf '%s\n' "Staging update refuses a dirty source checkout." >&2
+    exit 1
+fi
+commit=$(git -C "$repo_root" rev-parse --verify HEAD^{commit})
+case "$commit" in
+    *[!0123456789abcdef]*|???????????????????????????????????????)
+        printf '%s\n' "Staging update could not identify an exact Git commit." >&2
+        exit 1
+        ;;
+esac
+
+if [ "$candidate" -eq 1 ]; then
+    candidate_commit=
+    candidate_count=0
+    cassidy_refs=$(git -C "$repo_root" for-each-ref --format='%(refname) %(objecttype) %(objectname)' refs/cassidy/attempts) || {
+        printf '%s\n' "Staging Candidate deployment could not inspect Cassidy Candidate refs." >&2
+        exit 1
+    }
+    [ -n "$cassidy_refs" ] || {
+        printf '%s\n' "Staging Candidate deployment found no live Cassidy Candidate. Run a Candidate through Cassidy first." >&2
+        exit 1
+    }
+
+    set -- $cassidy_refs
+    while [ "$#" -gt 0 ]; do
+        [ "$#" -ge 3 ] || {
+            printf '%s\n' "Staging Candidate deployment found malformed Cassidy ref data." >&2
+            exit 1
+        }
+        ref=$1
+        object_type=$2
+        object=$3
+        shift 3
+
+        attempt=${ref#refs/cassidy/attempts/}
+        case "$ref:$attempt" in
+            refs/cassidy/attempts/*/candidate:*) ;;
+            *)
+                printf 'Staging Candidate deployment found unexpected Cassidy ref: %s. Clear stale Cassidy state before retrying.\n' "$ref" >&2
+                exit 1
+                ;;
+        esac
+        attempt=${attempt%/candidate}
+        case "$attempt" in
+            ''|*[!A-Za-z0-9_-]*)
+                printf 'Staging Candidate deployment found malformed Cassidy Candidate ref: %s.\n' "$ref" >&2
+                exit 1
+                ;;
+        esac
+        [ "$object_type" = commit ] || {
+            printf 'Staging Candidate deployment found a Candidate ref that does not name a commit: %s.\n' "$ref" >&2
+            exit 1
+        }
+        git -C "$repo_root" cat-file -e "$object^{commit}" 2>/dev/null || {
+            printf 'Staging Candidate deployment found an invalid Candidate commit at %s.\n' "$ref" >&2
+            exit 1
+        }
+        candidate_count=$((candidate_count + 1))
+        candidate_commit=$object
+    done
+
+    [ "$candidate_count" -eq 1 ] || {
+        printf '%s\n' "Staging Candidate deployment found multiple live Cassidy Candidates. Resolve them in Cassidy before retrying." >&2
+        exit 1
+    }
+    [ "$candidate_commit" != "$commit" ] && git -C "$repo_root" merge-base --is-ancestor "$commit" "$candidate_commit" || {
+        printf '%s\n' "Staging Candidate deployment found a stale or unrelated Candidate. It must be unaccepted work based on the current HEAD." >&2
+        exit 1
+    }
+    commit=$candidate_commit
+    printf 'WARNING: deploying unaccepted Cassidy Candidate commit %s to isolated staging only.\n' "$commit"
+fi
+
+artifact=$(mktemp "${TMPDIR:-/tmp}/muriel-staging-${commit}.XXXXXX.tar")
+chmod 600 "$artifact"
+remote_artifact=
+remote_helper=
+
+cleanup() {
+    status=$1
+    cleanup_failed=0
+    trap - EXIT HUP INT TERM
+
+    if [ -n "$remote_artifact$remote_helper" ] && ! ssh "$ssh_target" "rm -f -- '$remote_artifact' '$remote_helper'"; then
+        printf '%s\n' "Could not remove remote staging update files; they may remain at $remote_artifact $remote_helper." >&2
+        cleanup_failed=1
+    fi
+    if ! rm -f -- "$artifact"; then
+        printf '%s\n' "Could not remove local staging archive; it may remain at $artifact." >&2
+        cleanup_failed=1
+    fi
+
+    [ "$status" -ne 0 ] && exit "$status"
+    [ "$cleanup_failed" -eq 0 ] || exit 1
+}
+trap 'cleanup "$?"' EXIT
+trap 'cleanup 129' HUP
+trap 'cleanup 130' INT
+trap 'cleanup 143' TERM
+
+git -C "$repo_root" archive --worktree-attributes --format=tar "$commit" > "$artifact"
+if tar -tf "$artifact" | grep -Eq '(^|/)(\.venv|\.env|secrets|attempts)(/|$)|(^|/)db\.sqlite3$'; then
+    printf '%s\n' "Staging update artifact contains excluded development or secret material." >&2
+    exit 1
+fi
+
+printf 'Updating isolated staging on %s with commit %s.\n' "$target" "$commit"
+remote_candidate=$(ssh "$ssh_target" "umask 077 && mktemp --suffix=.tar /tmp/muriel-staging-${commit}.XXXXXX")
+case "$remote_candidate" in
+    "/tmp/muriel-staging-${commit}."[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]].tar) ;;
+    *)
+        printf '%s\n' "Staging host returned an unsafe temporary archive path." >&2
+        exit 1
+        ;;
+esac
+remote_artifact=$remote_candidate
+scp "$artifact" "$ssh_target:$remote_artifact"
+
+remote_candidate=$(ssh "$ssh_target" "umask 077 && mktemp --suffix=.sh /tmp/muriel-staging-${commit}.XXXXXX")
+case "$remote_candidate" in
+    "/tmp/muriel-staging-${commit}."[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]].sh) ;;
+    *)
+        printf '%s\n' "Staging host returned an unsafe temporary helper path." >&2
+        exit 1
+        ;;
+esac
+remote_helper=$remote_candidate
+ssh "$ssh_target" "set -eu
+artifact='$remote_artifact'
+helper='$remote_helper'
+[ -f \"\$artifact\" ] && [ ! -L \"\$artifact\" ] || exit 1
+[ -f \"\$helper\" ] && [ ! -L \"\$helper\" ] || exit 1
+tar -xOf \"\$artifact\" ops/update-staging-remote > \"\$helper\"
+chmod 600 \"\$helper\"
+[ -s \"\$helper\" ] && [ ! -L \"\$helper\" ]"
+
+# This is the sole remote privilege elevation for deployment and optional loading.
+ssh -tt "$ssh_target" "sudo sh '$remote_helper' '$commit' '$remote_artifact' '$reset' '$staging_host' '$staging_origin'"
+remote_helper=
+remote_artifact=
+
+printf 'Staging update deployed commit %s.\n' "$commit"
+printf 'Staging: %s/\n' "$staging_origin"

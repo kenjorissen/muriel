@@ -1,0 +1,8 @@
+.casd/ export-ignore
+.codex/ export-ignore
+.opencode/ export-ignore
+.venv/ export-ignore
+*.sqlite3 export-ignore
+.env export-ignore
+.env.* export-ignore
+secrets/ export-ignore

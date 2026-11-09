@@ -1,0 +1,229 @@
+#!/bin/sh
+# Restore a verified Muriel logical backup only to an explicit database target.
+set -eu
+
+usage() {
+    printf '%s\n' "Usage: sudo $0 --backup FILE --target DATABASE --scratch --confirm" >&2
+    printf '%s\n' "       $0 --backup FILE --target DATABASE --confirm [--allow-production]" >&2
+    exit 2
+}
+
+backup=
+target=
+confirmed=0
+allow_production=0
+scratch=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --backup)
+            [ "$#" -ge 2 ] || usage
+            backup=$2
+            shift
+            ;;
+        --target)
+            [ "$#" -ge 2 ] || usage
+            target=$2
+            shift
+            ;;
+        --confirm) confirmed=1 ;;
+        --allow-production) allow_production=1 ;;
+        --scratch) scratch=1 ;;
+        *) usage ;;
+    esac
+    shift
+done
+
+fail() {
+    printf '%s\n' "restore-database: $*" >&2
+    exit 1
+}
+
+[ -n "$backup" ] && [ -n "$target" ] && [ "$confirmed" -eq 1 ] || usage
+[ -f "$backup" ] && [ ! -L "$backup" ] || fail "backup is missing or unsafe"
+case "$target" in
+    [A-Za-z_]* ) ;;
+    *) fail "target must be a simple PostgreSQL database name" ;;
+esac
+case "$target" in
+    *[!A-Za-z0-9_]* ) fail "target must be a simple PostgreSQL database name" ;;
+esac
+
+if [ "$scratch" -eq 1 ]; then
+    [ "$(id -u)" -eq 0 ] || fail "scratch restore drills must run through sudo"
+    case "$target" in
+        muriel_restore_*) ;;
+        *) fail "scratch target must begin with muriel_restore_" ;;
+    esac
+else
+    [ "$(id -u)" -ne 0 ] || fail "ordinary restores must run as the unprivileged muriel service user"
+    environment_file=${MURIEL_ENVIRONMENT_FILE:-/etc/muriel/environment}
+    if [ -f "$environment_file" ]; then
+        set -a
+        . "$environment_file"
+        set +a
+    fi
+    production_database=${PRECEPTOR_POSTGRES_NAME:-muriel}
+    if [ "$target" = "$production_database" ] && [ "$allow_production" -ne 1 ]; then
+        fail "refusing to overwrite the production database without --allow-production"
+    fi
+fi
+
+metadata=$backup.metadata
+[ -f "$metadata" ] && [ ! -L "$metadata" ] || fail "backup metadata is missing or unsafe"
+metadata_dump=
+metadata_checksum=
+while IFS='=' read -r key value; do
+    case "$key" in
+        dump) metadata_dump=$value ;;
+        sha256) metadata_checksum=$value ;;
+    esac
+done < "$metadata"
+[ "$metadata_dump" = "${backup##*/}" ] || fail "metadata does not identify this backup"
+case "$metadata_checksum" in
+    ????????????????????????????????????????????????????????????????) ;;
+    *) fail "metadata checksum is invalid" ;;
+esac
+case "$metadata_checksum" in
+    *[!0123456789abcdef]*) fail "metadata checksum is invalid" ;;
+esac
+actual_checksum=$(sha256sum "$backup" | cut -d ' ' -f 1)
+[ "$actual_checksum" = "$metadata_checksum" ] || fail "backup checksum does not match metadata"
+
+if [ "$scratch" -eq 1 ]; then
+    environment_file=${MURIEL_ENVIRONMENT_FILE:-/etc/muriel/environment}
+    [ -f "$environment_file" ] && [ ! -L "$environment_file" ] && [ -r "$environment_file" ] || \
+        fail "production environment file is missing or unsafe"
+    run_as_muriel() {
+        PGCLUSTER=18/main runuser -u muriel -- "$@"
+    }
+    postgres_lifecycle() {
+        PGCLUSTER=18/main runuser -u postgres -- "$@"
+    }
+    muriel_query() {
+        run_as_muriel psql --cluster=18/main --host=/var/run/postgresql --port=5432 \
+            --dbname=postgres -tAc "$1"
+    }
+    postgres_endpoint_is_18_main() {
+        endpoint_problem=
+        pg_lsclusters --no-header | grep -Eq \
+            '^18[[:space:]]+main[[:space:]]+5432[[:space:]]+online[[:space:]]+postgres[[:space:]]+/var/lib/postgresql/18/main([[:space:]]|$)' || {
+            endpoint_problem="18/main is not online at port 5432"
+            return 1
+        }
+        socket_pid=$(ss -xlpnH 2>/dev/null | grep -F '/var/run/postgresql/.s.PGSQL.5432' | \
+            sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u)
+        set -- $socket_pid
+        [ "$#" -eq 1 ] || {
+            endpoint_problem="socket /var/run/postgresql/.s.PGSQL.5432 has no unique postgres listener"
+            return 1
+        }
+        listener=$(ps -o user=,comm=,args= -p "$1" 2>/dev/null || true)
+        listener_user=
+        listener_command=
+        listener_args=
+        IFS=' ' read -r listener_user listener_command listener_args <<EOF
+$listener
+EOF
+        [ "$listener_user" = postgres ] && [ "$listener_command" = postgres ] || {
+            endpoint_problem="socket listener does not identify as PostgreSQL 18/main"
+            return 1
+        }
+        case " $listener_args " in
+            *" -D /var/lib/postgresql/18/main "*) ;;
+            *)
+                endpoint_problem="socket listener does not identify as PostgreSQL 18/main"
+                return 1
+                ;;
+        esac
+        version=$(muriel_query 'SHOW server_version_num' 2>/dev/null || true)
+        case "$version" in
+            18[0-9][0-9][0-9][0-9]) ;;
+            *)
+                endpoint_problem="socket server does not report PostgreSQL major version 18"
+                return 1
+                ;;
+        esac
+    }
+    # Source as the service identity so later assignments cannot mask the effective settings.
+    run_as_muriel sh -c '
+        set -eu
+        unset \
+            PRECEPTOR_PRODUCTION_SECRET_KEY \
+            PRECEPTOR_PRODUCTION_ALLOWED_HOST \
+            PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN \
+            PRECEPTOR_POSTGRES_NAME \
+            PRECEPTOR_POSTGRES_USER \
+            PRECEPTOR_POSTGRES_HOST \
+            PRECEPTOR_POSTGRES_PORT
+        set -a
+        . "$1"
+        set +a
+        [ -n "${PRECEPTOR_PRODUCTION_SECRET_KEY:-}" ] || \
+            { printf "%s\\n" "restore-database: required production configuration is missing: PRECEPTOR_PRODUCTION_SECRET_KEY" >&2; exit 1; }
+        [ -n "${PRECEPTOR_PRODUCTION_ALLOWED_HOST:-}" ] || \
+            { printf "%s\\n" "restore-database: required production configuration is missing: PRECEPTOR_PRODUCTION_ALLOWED_HOST" >&2; exit 1; }
+        [ -n "${PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN:-}" ] || \
+            { printf "%s\\n" "restore-database: required production configuration is missing: PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN" >&2; exit 1; }
+        [ "${PRECEPTOR_POSTGRES_NAME:-}" = muriel ] || \
+            { printf "%s\\n" "restore-database: requires PRECEPTOR_POSTGRES_NAME=muriel" >&2; exit 1; }
+        [ "${PRECEPTOR_POSTGRES_USER:-}" = muriel ] || \
+            { printf "%s\\n" "restore-database: requires PRECEPTOR_POSTGRES_USER=muriel" >&2; exit 1; }
+        [ "${PRECEPTOR_POSTGRES_HOST:-/var/run/postgresql}" = /var/run/postgresql ] || \
+            { printf "%s\\n" "restore-database: requires the PostgreSQL 18/main local socket" >&2; exit 1; }
+        [ "${PRECEPTOR_POSTGRES_PORT:-5432}" = 5432 ] || \
+            { printf "%s\\n" "restore-database: requires PostgreSQL 18/main port 5432" >&2; exit 1; }
+    ' sh "$environment_file"
+    command -v pg_lsclusters >/dev/null 2>&1 || fail "pg_lsclusters is required"
+    command -v ss >/dev/null 2>&1 || fail "ss is required"
+    command -v ps >/dev/null 2>&1 || fail "ps is required"
+    postgres_endpoint_is_18_main || \
+        fail "PostgreSQL 18/main must own /var/run/postgresql port 5432: $endpoint_problem"
+
+    release_directory=${MURIEL_RELEASE_DIRECTORY:-/srv/muriel/current}
+    [ -x "$release_directory/scripts/check-production" ] || \
+        fail "production readiness check is missing or unsafe"
+    scratch_is_absent() {
+        if ! scratch_state=$(run_as_muriel psql --host=/var/run/postgresql --port=5432 \
+            --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$target'"); then
+            return 1
+        fi
+        [ -z "$scratch_state" ]
+    }
+    cleanup_scratch() {
+        trap - EXIT HUP INT TERM
+        postgres_lifecycle dropdb --host=/var/run/postgresql --port=5432 --if-exists "$target"
+        scratch_is_absent || fail "scratch database cleanup did not remove $target"
+    }
+    trap cleanup_scratch EXIT
+    trap 'exit 1' HUP INT TERM
+    run_as_muriel pg_restore --host=/var/run/postgresql --port=5432 --list "$backup" >/dev/null
+    postgres_lifecycle dropdb --host=/var/run/postgresql --port=5432 --if-exists "$target"
+    postgres_lifecycle createdb --host=/var/run/postgresql --port=5432 --owner=muriel "$target"
+    run_as_muriel pg_restore --host=/var/run/postgresql --port=5432 --clean --if-exists \
+        --no-owner --dbname="$target" "$backup"
+    runuser -u muriel -- sh -c '
+        set -eu
+        unset \
+            PRECEPTOR_PRODUCTION_SECRET_KEY \
+            PRECEPTOR_PRODUCTION_ALLOWED_HOST \
+            PRECEPTOR_PRODUCTION_CSRF_TRUSTED_ORIGIN \
+            PRECEPTOR_POSTGRES_NAME \
+            PRECEPTOR_POSTGRES_USER \
+            PRECEPTOR_POSTGRES_HOST \
+            PRECEPTOR_POSTGRES_PORT
+        set -a
+        . "$1"
+        set +a
+        PRECEPTOR_POSTGRES_NAME=$2
+        export PRECEPTOR_POSTGRES_NAME
+        exec "$3"
+    ' sh "$environment_file" "$target" "$release_directory/scripts/check-production"
+    cleanup_scratch
+    printf '%s\n' "Scratch restore drill passed for $target."
+    exit 0
+fi
+
+PGCLUSTER=18/main pg_restore --host=/var/run/postgresql --port=5432 --list "$backup" >/dev/null
+PGCLUSTER=18/main pg_restore --host=/var/run/postgresql --port=5432 --clean --if-exists \
+    --no-owner --dbname="$target" "$backup"
+printf '%s\n' "Restored verified backup into $target."

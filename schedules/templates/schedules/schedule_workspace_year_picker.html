@@ -1,0 +1,12 @@
+<form class="period-navigation-form compact-inline-control-row schedule-workspace-year-picker" action="{{ schedule_workspace_year_picker_action }}" method="get" data-calendar-period-picker{% if schedule_workspace_year_picker_preserves_month %} data-calendar-period-picker-sync-academic-year{% endif %}>
+  {% if schedule_workspace_year_picker_cluster %}
+    <select class="field-width--compact" id="{{ schedule_workspace_year_form.academic_year.id_for_label }}" name="academic_year" aria-label="Academic year">{% for value, label in schedule_workspace_year_form.fields.academic_year.choices %}<option value="{{ value }}"{% if value|add:0 == academic_year %} selected{% endif %}>{{ value }}&ndash;{{ value|add:1 }}</option>{% endfor %}</select>
+  {% else %}
+    <label for="{{ schedule_workspace_year_form.academic_year.id_for_label }}">Academic year</label>{{ schedule_workspace_year_form.academic_year }}
+  {% endif %}
+  {% if schedule_workspace_year_picker_preserves_month %}
+    <input type="hidden" name="month" value="{{ schedule_workspace_selected_month|date:'Y-m' }}">
+    <input type="hidden" name="picker" value="academic_year">
+  {% endif %}
+  <noscript><button type="submit">View</button></noscript>
+</form>

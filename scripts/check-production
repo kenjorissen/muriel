@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+python="$repo_root/.venv/bin/python"
+
+if [ ! -x "$python" ]; then
+    printf '%s\n' "Missing virtual environment at $repo_root/.venv." >&2
+    exit 1
+fi
+
+cd "$repo_root"
+DJANGO_SETTINGS_MODULE=preceptor_project.production_settings
+export DJANGO_SETTINGS_MODULE
+exec "$python" manage.py check_production

@@ -1,0 +1,42 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <header class="form-page-intro form-page-intro--contained">
+    <a class="form-return-link" href="{{ return_url }}">Back to schedule</a>
+    <h1 class="form-page-title">Late Doc: {{ on_date|date:"l, F j, Y" }}</h1>
+    {% if cleanup_closure %}
+      <p>{{ cleanup_closure.name }} closes this {{ cleanup_closure.coverage_label }} clinic shift. This retained Late Doc assignment can only be removed.</p>
+    {% else %}
+      <p>Monday 5-6 PM. This is a separate assignment, not an AM/PM Preceptor responsibility. It normally requires an effective Faculty physician; an Available as Float physician is a manual-only exception.</p>
+    {% endif %}
+  </header>
+  {% if candidates.current %}<p class="form-page-helper"><strong>Current assignment:</strong> {{ candidates.current.physician.display_name }}. {{ candidates.current.availability_reason }}</p>{% endif %}
+  {% if current_findings %}
+    <section class="surface-frame surface-frame--raised assignment-findings" aria-labelledby="current-findings-heading">
+      <header class="surface-header"><h2 id="current-findings-heading">Current findings</h2><p>These reflect the current Late Doc assignment.</p></header>
+      <div class="surface-body"><ul class="finding-details">{% for finding in current_findings %}<li class="finding finding-{{ finding.severity }}"><strong>{{ finding.severity|capfirst }}</strong>: {{ finding.message }}{% if finding.physicians %}<p>Related Physicians: {% for physician in finding.physicians %}<a href="{{ physician.url }}">{{ physician.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}{% if finding.source_links %}<p>Relevant sources: {% for source in finding.source_links %}<a href="{{ source.url }}">{{ source.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}</li>{% endfor %}</ul></div>
+    </section>
+  {% endif %}
+  {% if not cleanup_closure %}
+    <form action="{{ form_action }}" method="post" class="form-layout form-presentation">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-validation-message" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+      <section class="surface-frame surface-frame--raised" aria-labelledby="late-doc-assignment-heading">
+        <header class="surface-header"><h2 id="late-doc-assignment-heading">Late Doc assignment</h2></header>
+        <div class="surface-body form-content-stack">
+          {% include "schedules/_form_field.html" with field=form.physician helper=form.physician.help_text %}
+          {% include "schedules/_form_checkbox.html" with field=form.override helper=form.override.help_text %}
+          {% include "schedules/_form_field.html" with field=form.note helper=form.note.help_text %}
+          <div class="form-action-area"><button type="submit">Save Late Doc</button></div>
+        </div>
+      </section>
+    </form>
+  {% endif %}
+  {% if assignment %}
+    <section class="surface-frame surface-frame--raised surface-frame--removal surface-tone--danger" aria-labelledby="late-doc-removal-heading">
+      <header class="surface-header"><h2 id="late-doc-removal-heading">Remove Late Doc</h2></header>
+      <div class="surface-body"><form action="{% url 'late-doc-remove' on_date=on_date|date:'Y-m-d' %}{{ return_query }}" method="post" class="form-content-stack">{% csrf_token %}{% include "schedules/_form_field.html" with field=remove_form.note helper=remove_form.note.help_text %}<div class="form-action-area"><button class="form-action--destructive" type="submit">Remove Late Doc</button></div></form></div>
+    </section>
+  {% endif %}
+  <p class="form-page-helper"><a href="{% url 'late-doc-history' on_date=on_date|date:'Y-m-d' %}{{ return_query }}">View Late Doc history</a></p>
+{% endblock %}

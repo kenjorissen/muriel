@@ -1,0 +1,5 @@
+<nav class="workspace-local-navigation" aria-label="Physician navigation">
+  {% for item in physician_workspace_navigation %}
+    <a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.label }}</a>
+  {% endfor %}
+</nav>

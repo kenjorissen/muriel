@@ -1,0 +1,10 @@
+<div data-schedule-report-period-value="academic-year"{% if schedule_report_parameters.period != "academic-year" %} hidden{% endif %}>
+  {% include "schedules/period_navigation_cluster.html" with period_navigation_aria_label="Academic year navigation" period_navigation_period="academic year" period_navigation_previous_url=schedule_report_academic_year_previous_url period_navigation_next_url=schedule_report_academic_year_next_url period_navigation_control_template="schedules/schedule_report_period_picker.html" schedule_report_period_picker_period="academic-year" period_navigation_academic_year=True %}
+</div>
+<div data-schedule-report-period-value="calendar-year"{% if schedule_report_parameters.period != "calendar-year" %} hidden{% endif %}>
+  {% include "schedules/period_navigation_cluster.html" with period_navigation_aria_label="Calendar year navigation" period_navigation_period="calendar year" period_navigation_previous_url=schedule_report_calendar_year_previous_url period_navigation_next_url=schedule_report_calendar_year_next_url period_navigation_control_template="schedules/schedule_report_period_picker.html" schedule_report_period_picker_period="calendar-year" %}
+</div>
+<div class="form-field-grid form-field-grid--effective-range" data-schedule-report-period-value="custom"{% if schedule_report_parameters.period != "custom" %} hidden{% endif %}>
+  <div class="form-field-group"><label for="schedule-report-start-date">Start</label><input class="field-width--compact" id="schedule-report-start-date" type="date" name="start_date" value="{{ schedule_report_parameters.start_date|date:'Y-m-d' }}"></div>
+  <div class="form-field-group"><label for="schedule-report-end-date">End</label><input class="field-width--compact" id="schedule-report-end-date" type="date" name="end_date" value="{{ schedule_report_parameters.end_date|date:'Y-m-d' }}"></div>
+</div>

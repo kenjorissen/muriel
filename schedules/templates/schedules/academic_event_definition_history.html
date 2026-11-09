@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}Event Definition History{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width"><a class="form-return-link" href="{% url 'academic-event-definition-workspace' %}">Back to Event definitions</a><h1 class="form-page-title">Event definition history</h1></header>
+  <section class="surface-frame surface-frame--raised"><div class="surface-body">{% include "schedules/data_table.html" with table=academic_event_definition_history_table %}</div></section>
+{% endblock %}

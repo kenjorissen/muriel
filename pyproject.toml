@@ -1,0 +1,15 @@
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+preview = false
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "UP", "I", "RUF"]
+
+# Django generates these mutable migration class attributes; they remain formatted and linted otherwise.
+per-file-ignores = { "schedules/migrations/*.py" = ["RUF012"] }
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

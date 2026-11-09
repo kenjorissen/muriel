@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}Schedule option history{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width"><a class="form-return-link" href="{% url 'custom-availability-category-workspace' %}">Back to schedule options</a><h1 class="form-page-title">Schedule option history</h1></header>
+  <section class="surface-frame surface-frame--raised"><div class="surface-body">{% include "schedules/data_table.html" with table=custom_availability_category_history_table %}</div></section>
+{% endblock %}

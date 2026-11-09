@@ -1,0 +1,6 @@
+{% extends "schedules/base.html" %}
+{% block title %}Community Preceptor Schedule History{% endblock %}
+{% block content %}
+  <header class="form-page-intro form-page-intro--contained form-page-intro--full-width"><a class="form-return-link" href="{{ return_url }}">Back to Community Preceptor Schedule</a><h1 class="form-page-title">Community Preceptor Schedule history</h1></header>
+  <section class="surface-frame surface-frame--raised"><div class="surface-body">{% include "schedules/data_table.html" with table=community_preceptor_history_table %}</div></section>
+{% endblock %}

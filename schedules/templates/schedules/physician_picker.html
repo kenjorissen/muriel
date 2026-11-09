@@ -1,0 +1,35 @@
+{% with selected_count=field.value|length %}
+  <p class="form-helper" id="{{ field.auto_id }}-count" data-physician-picker-caption data-physician-picker-selection-instructions="{{ selection_instructions }}" aria-live="polite">{% if selected_count == 1 %}1 selected physician.{% else %}{{ selected_count }} selected physicians.{% endif %} {{ selection_instructions }}</p>
+{% endwith %}
+<div class="physician-picker" data-physician-picker>
+  <div class="physician-picker-available">
+    <div class="physician-picker-filter" data-physician-picker-filter-area hidden>
+      <label for="{{ field.auto_id }}-filter">Filter physicians</label>
+      <input id="{{ field.auto_id }}-filter" type="search" data-physician-picker-filter aria-controls="{{ field.auto_id }}-choices" autocomplete="off">
+    </div>
+    <fieldset class="physician-picker-native-choice">
+      <legend>{{ field.label }}</legend>
+      <div class="form-choice-group-content">
+        <div id="{{ field.auto_id }}-choices" class="physician-picker-choice-list" data-physician-picker-choices aria-describedby="{{ field.auto_id }}-count">
+          {% for choice in field %}
+            <div class="physician-picker-choice" data-physician-picker-choice>{{ choice }}</div>
+          {% empty %}
+            <p class="empty">No physicians are available.</p>
+          {% endfor %}
+        </div>
+      </div>
+      {% if field.errors %}<div class="physician-picker-validation">{{ field.errors }}</div>{% endif %}
+    </fieldset>
+  </div>
+  <div class="physician-picker-selected-column" data-physician-picker-selected-column hidden>
+    <div class="physician-picker-selected-heading">
+      <h3 id="{{ field.auto_id }}-selected-heading">Selected physicians</h3>
+    </div>
+    <aside class="physician-picker-selected" data-physician-picker-selected aria-labelledby="{{ field.auto_id }}-selected-heading">
+      <p class="empty" data-physician-picker-empty>No physicians selected.</p>
+      <p class="physician-picker-all-available" data-physician-picker-all-available hidden>All available Faculty</p>
+      <ul class="physician-picker-token-list" data-physician-picker-tokens></ul>
+    </aside>
+    <p class="physician-picker-selected-instruction" data-physician-picker-selected-instruction>Click on a name to remove it.</p>
+  </div>
+</div>

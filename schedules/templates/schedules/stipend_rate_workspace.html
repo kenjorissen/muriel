@@ -1,0 +1,11 @@
+{% extends "schedules/schedule_workspace_base.html" %}
+{% block title %}Stipend rates{% endblock %}
+{% block schedule_workspace_period_controls %}{% endblock %}
+{% block schedule_workspace_content %}
+  <h1 class="visually-hidden">Stipend Rates</h1>
+  <section class="workspace-surface surface-frame"><header class="surface-header schedule-workspace-actions-header"><h2>Stipend rate timelines</h2><a href="{% url 'stipend-rate-history' %}">Stipend rate history</a></header><div class="surface-body surface-content-stack"><p>Organization-wide US-dollar hourly rates used by current stipend reports. Each configured timeline remains unbounded at both outer ends with no gaps between periods.</p></div></section>
+  <div class="workspace-surface-stack">
+    <section class="workspace-surface surface-frame"><header class="surface-header"><h2>Community Preceptor</h2></header><div class="surface-body">{% if community_preceptor_rates %}{% if can_manage_stipend_rates %}<p><a href="{% url 'stipend-rate-append' 'community_preceptor' 'earlier' %}">Add earlier rate</a></p>{% endif %}{% include "schedules/data_table.html" with table=community_preceptor_rates_table %}{% if can_manage_stipend_rates %}<p><a href="{% url 'stipend-rate-append' 'community_preceptor' 'later' %}">Add later rate</a></p>{% endif %}{% else %}<p>No Community Preceptor rate configured.{% if can_manage_stipend_rates %} <a href="{% url 'stipend-rate-initial' 'community_preceptor' %}">Set initial rate</a>{% endif %}</p>{% endif %}</div></section>
+    <section class="workspace-surface surface-frame"><header class="surface-header"><h2>Late Doc</h2></header><div class="surface-body">{% if late_doc_rates %}{% if can_manage_stipend_rates %}<p><a href="{% url 'stipend-rate-append' 'late_doc' 'earlier' %}">Add earlier rate</a></p>{% endif %}{% include "schedules/data_table.html" with table=late_doc_rates_table %}{% if can_manage_stipend_rates %}<p><a href="{% url 'stipend-rate-append' 'late_doc' 'later' %}">Add later rate</a></p>{% endif %}{% else %}<p>No Late Doc rate configured.{% if can_manage_stipend_rates %} <a href="{% url 'stipend-rate-initial' 'late_doc' %}">Set initial rate</a>{% endif %}</p>{% endif %}</div></section>
+  </div>
+{% endblock %}
