@@ -1,0 +1,134 @@
+#!/bin/sh
+set -u
+
+usage='usage: .casd/tools/read-lines FILE [START_LINE [END_LINE]]'
+
+fail() {
+    printf '%s\n' "read-lines: $1" >&2
+    exit 2
+}
+
+normalize_line_number() {
+    line_label=$1
+    line_value=$2
+    case $line_value in
+        ''|*[!0-9]*) fail "$line_label must be a positive decimal line number" ;;
+    esac
+    while [ "${line_value#0}" != "$line_value" ]; do
+        line_value=${line_value#0}
+    done
+    [ -n "$line_value" ] || fail "$line_label must be a positive decimal line number"
+    normalized_line_number=$line_value
+}
+
+decimal_greater_than() {
+    left_decimal=$1
+    right_decimal=$2
+    if [ "${#left_decimal}" -gt "${#right_decimal}" ]; then
+        return 0
+    fi
+    if [ "${#left_decimal}" -lt "${#right_decimal}" ]; then
+        return 1
+    fi
+    LC_ALL=C awk -v left="$left_decimal" -v right="$right_decimal" \
+        'BEGIN { exit !("x" left > "x" right) }' </dev/null
+}
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
+    printf '%s\n' "$usage" >&2
+    exit 2
+fi
+
+requested_file=$1
+start_line=${2-1}
+end_line=${3-}
+
+normalize_line_number START_LINE "$start_line"
+start_line=$normalized_line_number
+if [ "$#" -eq 3 ]; then
+    normalize_line_number END_LINE "$end_line"
+    end_line=$normalized_line_number
+    decimal_greater_than "$start_line" "$end_line" && \
+        fail 'END_LINE must not be before START_LINE'
+fi
+
+tool_path=$0
+case $tool_path in
+    */*) ;;
+    *)
+        tool_path=$(command -v "$tool_path") || fail 'cannot locate the managed helper'
+        ;;
+esac
+case $tool_path in
+    /*) ;;
+    *) tool_path=$(pwd -P)/$tool_path ;;
+esac
+tool_symlink_hops=0
+while :; do
+    tool_directory=$(dirname "$tool_path") || fail 'cannot locate the managed helper directory'
+    tool_name=$(basename "$tool_path") || fail 'cannot locate the managed helper'
+    resolved_tool_directory=$(CDPATH= cd -P "$tool_directory" 2>/dev/null && pwd -P) ||
+        fail 'cannot resolve the managed helper directory'
+    resolved_tool=$resolved_tool_directory/$tool_name
+    [ -L "$resolved_tool" ] || break
+    tool_symlink_hops=$((tool_symlink_hops + 1))
+    [ "$tool_symlink_hops" -le 40 ] || fail 'managed helper has too many symbolic links'
+    tool_target=$(readlink "$resolved_tool") || fail 'cannot resolve the managed helper'
+    case $tool_target in
+        /*) tool_path=$tool_target ;;
+        *) tool_path=$resolved_tool_directory/$tool_target ;;
+    esac
+done
+repository_root=$(CDPATH= cd -P "$resolved_tool_directory/../.." 2>/dev/null && pwd -P) ||
+    fail 'cannot resolve the repository root'
+
+case $requested_file in
+    '') fail 'FILE must name an ordinary repository file' ;;
+    */) fail 'FILE must name an ordinary repository file' ;;
+    /*) candidate_path=$requested_file ;;
+    *) candidate_path=$repository_root/$requested_file ;;
+esac
+
+resolve_candidate_directory() {
+    candidate_directory=$(dirname "$candidate_path") ||
+        fail 'FILE must name an ordinary repository file'
+    candidate_name=$(basename "$candidate_path") ||
+        fail 'FILE must name an ordinary repository file'
+    resolved_directory=$(CDPATH= cd -P "$candidate_directory" 2>/dev/null && pwd -P) ||
+        fail 'FILE is missing or has an unresolved path component'
+    case $resolved_directory in
+        "$repository_root"|"$repository_root"/*) ;;
+        *) fail 'FILE resolves outside the repository' ;;
+    esac
+    resolved_file=$resolved_directory/$candidate_name
+}
+
+resolve_candidate_directory
+symlink_hops=0
+while [ -L "$resolved_file" ]; do
+    symlink_hops=$((symlink_hops + 1))
+    [ "$symlink_hops" -le 40 ] || fail 'FILE has too many symbolic links'
+    symlink_target=$(readlink "$resolved_file") || fail 'could not resolve FILE symbolic link'
+    case $symlink_target in
+        /*) candidate_path=$symlink_target ;;
+        *) candidate_path=$resolved_directory/$symlink_target ;;
+    esac
+    resolve_candidate_directory
+done
+if [ ! -f "$resolved_file" ]; then
+    fail 'FILE must name an ordinary regular file'
+fi
+if [ ! -r "$resolved_file" ]; then
+    fail 'FILE is not readable'
+fi
+
+line_count=$(LC_ALL=C awk 'END { print NR }' "$resolved_file") ||
+    fail 'could not read FILE'
+if decimal_greater_than "$start_line" "$line_count"; then
+    exit 0
+fi
+if [ -z "$end_line" ] || decimal_greater_than "$end_line" "$line_count"; then
+    end_line=$line_count
+fi
+
+LC_ALL=C sed -n -e "${start_line},${end_line}p" "$resolved_file"

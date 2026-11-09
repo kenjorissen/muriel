@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+usage='usage: .casd/tools/inspect-processes PID [PID ...]'
+
+fail() {
+    printf '%s\n' "inspect-processes: $1" >&2
+    printf '%s\n' "$usage" >&2
+    exit 2
+}
+
+[ "$#" -gt 0 ] || {
+    printf '%s\n' "$usage" >&2
+    exit 2
+}
+
+pids=
+for pid in "$@"; do
+    case "$pid" in
+        ''|*[!0-9]*) fail "invalid PID: $pid" ;;
+    esac
+    case "$pid" in
+        *[!0]*) ;;
+        *) fail "invalid PID: $pid" ;;
+    esac
+    if [ -z "$pids" ]; then
+        pids=$pid
+    else
+        pids=$pids,$pid
+    fi
+done
+
+exec ps -p "$pids" -o pid,ppid,pgid,stat,etime,%cpu,%mem,comm,args

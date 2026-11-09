@@ -79,3 +79,7 @@ helper must be added during an Attempt:
 5. Commit the helper changes separately before starting the next Cassidy Task.
 
 Never stash the entire dirty worktree as a shortcut.
+
+## Cassidy
+
+Before Cassidy planning or workflow work, read and follow `.casd/AGENTS.md`.
