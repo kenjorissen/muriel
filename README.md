@@ -310,9 +310,14 @@ scripts/check
 ```
 
 It verifies Ruff, Django checks, browser interaction tests, and the parallel
-Django test suite with `preceptor_project.test_settings`. It excludes the
-deterministic, representative reset-tool and multi-year synthetic-scenario
-integration cases; run them when changing those owners:
+Django test suite with `preceptor_project.test_settings`. The pinned development
+dependency `tblib` enables Django to report ordinary parallel-test failures with
+the failing test and traceback instead of a traceback-pickling error; install
+`requirements-dev.txt` before running checks, including in the shared main-worktree
+virtualenv used by Cassidy worktrees.
+
+The check excludes the deterministic, representative reset-tool and multi-year
+synthetic-scenario integration cases; run them when changing those owners:
 
 ```sh
 scripts/check-reset-tool-integration
