@@ -1,0 +1,18 @@
+default_permissions = "cassidy"
+
+[features]
+network_proxy = true
+
+[permissions.cassidy]
+extends = ":workspace"
+
+[permissions.cassidy.network]
+enabled = true
+allow_local_binding = true
+
+[permissions.cassidy.network.domains]
+localhost = "allow"
+"127.0.0.1" = "allow"
+
+[permissions.cassidy.filesystem.":workspace_roots"]
+".git/cassidy/planning-worktree" = "write"
