@@ -6,6 +6,12 @@ Goal: [goal-000002](../goals/goal-000002-staged-dependency-upgrades.md)
 
 Upgrade `psycopg[binary]` from 3.2.10 to 3.3.8 while retaining Django-owned PostgreSQL persistence, transactional scheduling authority, and SQLite development behavior. Prove actual PostgreSQL 18 compatibility on disposable test data, not only mocked settings or SQLite.
 
+## Predecessor and retained diagnostic context
+
+Run after accepted task-000011, which repairs PostgreSQL account unlinking without changing pins. Preserve that repair and include its identity/rollback protection in the PostgreSQL regression evidence. The prior Attempt `227654-1794448148361771192-0` registered blocked and produced no Candidate; its pin and fixture edits are not accepted source. A fresh Attempt after the repair must establish all acceptance again.
+
+That diagnostic run also found `RetainedPreceptingSolverProposalTests.test_manual_late_doc_choice_requires_fresh_confirmation` could select the already-proposed physician as its replacement. If still present, correct that fixture to select a genuinely different eligible physician from the retained proposal value, retaining the pending-confirmation assertion. Do not freeze solver tie-break ordering or weaken the expected behavior. The worker's focused correction passed PostgreSQL in the blocked Attempt, but it must be implemented and reviewed in this Candidate rather than assumed present.
+
 ## Contracts and owning evidence
 
 - `docs/design.md` sections 4 (SchedulingMutationAuthority), 7.2 (retained history and organization time), 15.2 (human-reviewed proposal Apply), and 26 (Python 3.14, PostgreSQL production and SQLite development). The accepted month-edit recorder section requires atomic assignment/history/timestamp changes and rolled-back projection savepoints.

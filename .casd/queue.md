@@ -1,4 +1,5 @@
 # Queue
+
 - [Task 000001: Parallel test failure reporting](tasks/task-000001-parallel-test-failure-reporting.md)
 - [Task 000002: Reproducible browser checks](tasks/task-000002-reproducible-browser-checks.md)
 - [Task 000003: Patched pypdf dependency](tasks/task-000003-patched-pypdf-dependency.md)
@@ -7,4 +8,6 @@
 - [Task 000006: GitHub Actions v7](tasks/task-000006-github-actions-v7.md)
 - [Task 000007: Ruff 0.17.4](tasks/task-000007-ruff-0174.md)
 - [Task 000008: WhiteNoise 6.12.0](tasks/task-000008-whitenoise-6120.md)
+- [Task 000011: PostgreSQL account unlink repair](tasks/task-000011-postgres-account-unlink.md)
 - [Task 000009: Psycopg 3.3.8](tasks/task-000009-psycopg-338.md)
+- [Task 000010: Gunicorn 26.2.0](tasks/task-000010-gunicorn-2620.md)
