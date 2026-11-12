@@ -2,11 +2,16 @@ import json
 import os
 import re
 import shutil
+import signal
+import socket
 import stat
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
+from http.client import HTTPConnection
 from pathlib import Path
+from select import select
 from unittest import mock
 
 from django.contrib.staticfiles.storage import ManifestStaticFilesStorage
@@ -15,6 +20,8 @@ from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from schedules.tests.test_production_settings import PRODUCTION_ENVIRONMENT
+from schedules.tests.test_staging_instance import STAGING_ENVIRONMENT
 from schedules.tests.test_work_remaining import _RenderedSurfaceParser
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -101,6 +108,7 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
             "--access-logfile",
             "--bind",
             "--error-logfile",
+            "--forwarded-allow-ips",
             "--graceful-timeout",
             "--timeout",
             "--umask",
@@ -192,6 +200,7 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
         self.assertEqual(command["options"]["--timeout"], "90")
         self.assertEqual(command["options"]["--graceful-timeout"], "45")
         self.assertEqual(command["options"]["--umask"], "0o007")
+        self.assertEqual(command["options"]["--forwarded-allow-ips"], "")
         self.assertEqual(command["options"]["--access-logfile"], "-")
         self.assertEqual(command["options"]["--error-logfile"], "-")
         self.assertIn("--capture-output", command["options"])
@@ -226,6 +235,211 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
         self.assertEqual(command["options"]["--access-logfile"], "-")
         self.assertEqual(command["options"]["--error-logfile"], "-")
         self.assertIn("--capture-output", command["options"])
+
+    @contextmanager
+    def proxy_server(self, *, staging=False, inherited_trust=False):
+        """Run captured launcher policy with only disposable listener/app overrides.
+
+        Gunicorn owns header parsing; real deployment settings and middleware own
+        Django's interpretation. No database, static deployment or live port is used.
+        """
+        self.create_virtual_environment()
+        self.write_executable(self.fake_bin / "id", "#!/bin/sh\nprintf '1000\\n'\n")
+        environment = {
+            name: value
+            for name, value in os.environ.items()
+            if not name.startswith("PRECEPTOR_")
+            and name not in {"FORWARDED_ALLOW_IPS", "GUNICORN_CMD_ARGS"}
+        }
+        if inherited_trust:
+            environment |= {
+                "FORWARDED_ALLOW_IPS": "*",
+                "GUNICORN_CMD_ARGS": "--forwarded-allow-ips=*",
+            }
+        launcher_environment = (
+            {
+                "PRECEPTOR_DJANGO_SETTINGS_MODULE": "preceptor_project.staging_settings",
+                "PRECEPTOR_GUNICORN_BIND": "127.0.0.1:8082",
+            }
+            if staging
+            else {}
+        )
+        with mock.patch.dict(os.environ, environment, clear=True):
+            result = self.run_launcher("start-production", **launcher_environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        command = self.gunicorn_command()
+        fixture = self.root / "proxy_fixture"
+        fixture.mkdir()
+        static_root = fixture / "static"
+        static_root.mkdir()
+        (fixture / "proxy_settings.py").write_text(
+            f"from {command['settings_module']} import *\n"
+            "DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}}\n"
+            "ROOT_URLCONF = 'proxy_urls'\n"
+            f"STATIC_ROOT = {str(static_root)!r}\n"
+        )
+        (fixture / "proxy_urls.py").write_text(
+            "from django.http import JsonResponse\n"
+            "from django.urls import path\n"
+            "def probe(request):\n"
+            "    return JsonResponse({\n"
+            "        'secure': request.is_secure(),\n"
+            "        'scheme': request.META['wsgi.url_scheme'],\n"
+            "        'peer': request.META['REMOTE_ADDR'],\n"
+            "        'admin': request.META.get('HTTP_X_MURIEL_ADMIN'),\n"
+            "    })\n"
+            "urlpatterns = [path('probe/', probe, name='health')]\n"
+        )
+        # A worker lifecycle hook signals readiness, not a sleep or log/PID match.
+        config = fixture / "gunicorn.conf.py"
+        config.write_text(
+            "import json, os\n"
+            "def post_worker_init(worker):\n"
+            "    policy = {'ips': worker.cfg.forwarded_allow_ips,\n"
+            "              'headers': worker.cfg.secure_scheme_headers}\n"
+            "    os.write(int(os.environ['PROXY_READY_FD']), json.dumps(policy).encode())\n"
+        )
+        with (
+            socket.socket() as tcp,
+            socket.socket(socket.AF_UNIX) as unix,
+            (fixture / "server.log").open("w+") as log,
+        ):
+            tcp.bind(("127.0.0.1", 0))
+            tcp.listen()
+            unix.bind(str(fixture / "gunicorn.sock"))
+            unix.listen()
+            ready_read, ready_write = os.pipe()
+            try:
+                server = subprocess.Popen(
+                    [
+                        sys.executable,
+                        *command["argv"],
+                        # Test-only socket activation avoids a port allocation race.
+                        "--bind",
+                        f"fd://{tcp.fileno()}",
+                        "--bind",
+                        f"fd://{unix.fileno()}",
+                        "--workers",
+                        "1",
+                        "--config",
+                        str(config),
+                        "--pythonpath",
+                        str(fixture),
+                    ],
+                    cwd=ROOT,
+                    env=environment
+                    | (STAGING_ENVIRONMENT if staging else PRODUCTION_ENVIRONMENT)
+                    | {
+                        "DJANGO_SETTINGS_MODULE": "proxy_settings",
+                        "PROXY_READY_FD": str(ready_write),
+                    },
+                    start_new_session=True,
+                    pass_fds=(tcp.fileno(), unix.fileno(), ready_write),
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                )
+                try:
+                    os.close(ready_write)
+                    ready_write = None
+                    readable, _, _ = select([ready_read], [], [], 20)
+                    if not readable:
+                        log.seek(0)
+                        self.fail(f"Gunicorn worker readiness deadline exceeded:\n{log.read()}")
+                    policy = os.read(ready_read, 65536)
+                    if not policy:
+                        log.seek(0)
+                        self.fail(f"Gunicorn exited before readiness:\n{log.read()}")
+                    yield json.loads(policy), tcp.getsockname(), str(fixture / "gunicorn.sock")
+                finally:
+                    server.terminate()
+                    try:
+                        server.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        # This session contains only our test master and its worker.
+                        os.killpg(server.pid, signal.SIGKILL)
+                        server.wait(timeout=5)
+                        log.seek(0)
+                        self.fail(f"Gunicorn shutdown deadline exceeded:\n{log.read()}")
+                    log.seek(0)
+                    output = log.read()
+                    self.assertEqual(server.returncode, 0, output)
+                    self.assertNotIn("[ERROR]", output, output)
+                    self.assertNotIn("Traceback", output, output)
+            finally:
+                os.close(ready_read)
+                if ready_write is not None:
+                    os.close(ready_write)
+
+    def proxy_request(self, address, headers, *, staging=False):
+        host = "staging.example.test:10000" if staging else "muriel.example"
+        connection = HTTPConnection(host, timeout=5)
+        try:
+            if isinstance(address, str):
+                connection.sock = socket.socket(socket.AF_UNIX)
+                connection.sock.settimeout(5)
+                connection.sock.connect(address)
+            else:
+                connection.sock = socket.create_connection(address, timeout=5)
+            connection.request("GET", "/probe/?boundary=1", headers={"Host": host, **headers})
+            response = connection.getresponse()
+            body = response.read()
+            return response.status, dict(response.getheaders()), body
+        finally:
+            connection.close()
+
+    def test_real_gunicorn_production_rejects_tcp_scheme_headers_but_trusts_unix(self):
+        self.assert_production_proxy_policy(inherited_trust=False)
+
+    def test_real_gunicorn_production_trust_overrides_inherited_environment(self):
+        self.assert_production_proxy_policy(inherited_trust=True)
+
+    def assert_production_proxy_policy(self, *, inherited_trust):
+        # Independent documented examples, with coverage checked against the running
+        # server so a later Gunicorn upgrade cannot silently add an untested alias.
+        scheme_headers = {
+            "X-FORWARDED-PROTO": "https",
+            "X-FORWARDED-PROTOCOL": "ssl",
+            "X-FORWARDED-SSL": "on",
+        }
+        with self.proxy_server(inherited_trust=inherited_trust) as (policy, tcp, unix):
+            self.assertEqual(policy["headers"], scheme_headers)
+            for forwarded in (
+                {},
+                *({name: value} for name, value in scheme_headers.items()),
+                scheme_headers,
+            ):
+                with self.subTest(headers=forwarded):
+                    headers = forwarded | {"X-Muriel-Admin": "1"}
+                    status, response_headers, body = self.proxy_request(tcp, headers)
+                    self.assertEqual(status, 301, body)
+                    self.assertEqual(
+                        response_headers["Location"], "https://muriel.example/probe/?boundary=1"
+                    )
+                    status, _, body = self.proxy_request(unix, headers)
+                    if forwarded:
+                        self.assertEqual(status, 200, body)
+                        self.assertEqual(
+                            json.loads(body),
+                            {"secure": True, "scheme": "https", "peer": "", "admin": "1"},
+                        )
+                    else:
+                        self.assertEqual(status, 301)
+            self.assertEqual(policy["ips"], [])
+
+    def test_real_gunicorn_staging_preserves_loopback_https(self):
+        with self.proxy_server(staging=True) as (policy, tcp, _):
+            self.assertIn("127.0.0.1", policy["ips"])
+            status, headers, _ = self.proxy_request(tcp, {}, staging=True)
+            self.assertEqual(status, 301)
+            self.assertEqual(
+                headers["Location"], "https://staging.example.test:10000/probe/?boundary=1"
+            )
+            status, _, body = self.proxy_request(tcp, {"X-Forwarded-Proto": "https"}, staging=True)
+            self.assertEqual(status, 200, body)
+            self.assertEqual(
+                json.loads(body),
+                {"secure": True, "scheme": "https", "peer": "127.0.0.1", "admin": None},
+            )
 
     def test_readiness_launcher_forces_production_settings(self):
         self.create_virtual_environment()

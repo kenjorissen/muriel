@@ -107,7 +107,12 @@ whole-host validation or rollback guarantee. Check/dry-run remains read-only.
 
 Staging binds Gunicorn only to `127.0.0.1:8082`. Its browser route is the
 authenticated Tailscale Serve HTTPS listener on port `10000`; do not use
-Tailscale Funnel. The site uses separate `muriel_staging_sessionid` and
+Tailscale Funnel. Unlike production's Unix-only forwarding trust, staging
+retains Gunicorn's default loopback forwarded-IP trust and Django's
+`X-Forwarded-Proto: https` handling for this local Serve hop. The shared launcher
+applies production's empty forwarded-IP allowlist only to production settings;
+it must not disable staging's legitimate HTTPS forwarding.
+The site uses separate `muriel_staging_sessionid` and
 `muriel_staging_csrftoken` cookies, keeps collected assets in
 `/srv/muriel-staging/shared/static`, displays `STAGING — SYNTHETIC DATA` on
 application and Django Admin pages, and disables all outbound mail.

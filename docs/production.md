@@ -108,7 +108,8 @@ application data.
 ## Service command
 
 Use `scripts/start-production` as the systemd `ExecStart` command. It always
-uses `preceptor_project.production_settings`, starts foreground Gunicorn, and
+uses `preceptor_project.production_settings` for production (the separate
+[staging service](staging.md) explicitly selects its own settings), starts foreground Gunicorn, and
 writes access and error output to the standard streams for journald. It refuses
 to run as root.
 
@@ -118,6 +119,18 @@ timeout. Bootstrap adds `www-data` to the `muriel` group, and the systemd unit
 creates `/run/muriel` for that group before Gunicorn starts. Nginx is fixed to
 this socket, so a commissioned host must not override the socket or socket
 umask.
+
+Production explicitly passes `--forwarded-allow-ips ""` to Gunicorn: no TCP
+peer, including loopback, may assert HTTPS through Gunicorn's scheme headers
+(`X-Forwarded-Proto`, `X-Forwarded-Protocol`, or `X-Forwarded-SSL`). The quoted
+empty argument is intentional. Gunicorn's command-line setting takes precedence
+over `FORWARDED_ALLOW_IPS` and `GUNICORN_CMD_ARGS`; do not replace it with an
+environment default. Unix-socket peers remain trusted by Gunicorn independently
+of this IP list. This complements Django's Unix-only forwarded-protocol and
+private-Admin marker handling: stripping a header in Django cannot undo a WSGI
+scheme already set by Gunicorn. Nginx must still overwrite forwarding headers.
+Staging retains its separate loopback forwarding policy for Tailscale Serve;
+this production rule does not apply to staging's fixed `127.0.0.1:8082` listener.
 
 ## Administrator creation
 
