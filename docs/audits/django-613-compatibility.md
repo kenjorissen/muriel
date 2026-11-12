@@ -81,10 +81,13 @@ with fresh IDs. This was an ambiguous fixture, not a Django or solver regression
 Fill could assign Thin Monday to the other open PM position, so both Late Doc
 candidates could earn PM overlap and the required winner was an arbitrary tie.
 
-The fixture now explicitly retains both PM positions (including the eligible
-backup-only Rounder), leaving Established as the only normally available Late
-Doc candidate with PM overlap. Existing current-work, selected-Physician,
-overlap-report and alternatives assertions are unchanged. Production solver
+The fixture now explicitly retains both PM positions, leaving Established as
+the only normally available Late Doc candidate with PM overlap. Rounder is
+role-eligible but effectively unavailable because of Normal Rounding, not
+backup-only. Fill preserves every existing assignment, so it retains Rounder's
+existing PM assignment; this is not evidence that the solver newly selects an
+unavailable physician. Existing current-work, selected-Physician, overlap-report
+and alternatives assertions are unchanged. Production solver
 policy and schema are unchanged. The full class and subsequent cross-backend
 checks passed without relying on a particular sequence start or tie outcome.
 
