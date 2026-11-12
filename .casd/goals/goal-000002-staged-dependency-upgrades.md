@@ -39,6 +39,8 @@ Use the existing canonical topic contracts, `docs/production.md`, `docs/staging.
 
 The coordinator runs sequential Attempts, inspects joined evidence, accepts only passing Candidates without unresolved concerns, and verifies authorized remote runs. Runtime increments are staged in bounded groups with larger framework/server changes separately attributable; stop before proceeding past an unresolved compatibility failure. Existing operator-local staging selection is explicitly sourced in a subshell; server secrets stay on the server. An interactive sudo prompt is a human boundary, not permission to bypass it. Do not claim authenticated smoke coverage without actual evidence.
 
+After the authorized repair, execute Task 000011 then Task 000009. Once accepted and GitHub-verified, verify the combined WhiteNoise/Psycopg runtime on staging without reset before the separate Gunicorn increment. Verify Gunicorn on staging before the later Django upgrade. Local operator selection is in `~/.config/muriel/staging.env`; source it explicitly in a subshell, not into protected server settings. Staging's last inspected active release was baseline `9e16310d1c78ace9dd60f5d2342a21c8606563a8`; service status alone does not prove later deployment or authenticated smoke coverage. Any sudo interaction remains a human boundary.
+
 ## Integration evidence
 
 - Actions v7 accepted at `450576cb1e2e79e01bc5f3afbb1d4a5aac30b3a7`.
@@ -54,7 +56,7 @@ Actual PostgreSQL 18.6 migrations and independent NOWAIT row-lock probes passed,
 
 The run also exposed an order-dependent Late Doc test fixture that could choose the already-proposed physician as its replacement. The worker's disposable change selected a genuinely different physician; the focused PostgreSQL rerun passed that assertion while the unlink error remained. SQLite's focused 72 tests, quality command and complete check (1,612 Django tests, six existing skips) passed diagnostically. Full output included static-serving tracebacks despite a green result; these are not evidence of PostgreSQL success. There was no authoritative Candidate Check or independent Candidate Review.
 
-The worker reported cleanup of container `casd-psycopg-227654-J7JVIL` (ID `ad0b448658c1fc67099de15662e3f192fcb1069796d39a388c5dc58a5dd6d028`) and `.psycopg-verification.J7JVIL`; its implementation worktree is no longer registered. The shared main virtualenv remains at psycopg/psycopg-binary 3.3.8, while accepted requirements still pin 3.2.10. Disposable pin/fixture edits are not accepted source. Gunicorn remains an unpublished draft. Await human direction on a focused PostgreSQL account-unlink repair before retrying the driver Task; do not infer permission to change locking semantics from a failed compatibility check.
+The worker reported cleanup of container `casd-psycopg-227654-J7JVIL` (ID `ad0b448658c1fc67099de15662e3f192fcb1069796d39a388c5dc58a5dd6d028`) and `.psycopg-verification.J7JVIL`; its implementation worktree is no longer registered. The shared main virtualenv remains at psycopg/psycopg-binary 3.3.8, while accepted requirements still pin 3.2.10. Disposable pin/fixture edits are not accepted source. Gunicorn remains an unpublished draft. The human subsequently approved the proposed focused repair and continuation: lock the Physician without the nullable join, separately lock its linked account in the same transaction, retain history/authorization and an unlinked no-op. Task 000011 delivers this at the accepted dependency versions before a fresh Task 000009 Attempt. This explicit approval does not authorize weaker locks, a broader concurrency redesign or live data mutation. Restore the accepted driver in the shared virtualenv for repair verification, then let the resumed upgrade install its target.
 
 ## Narrow runtime discovery
 
@@ -67,5 +69,6 @@ The Gunicorn slice accounts for its new default control socket (introduced in 25
 - [Task 000006: GitHub Actions v7](../tasks/task-000006-github-actions-v7.md)
 - [Task 000007: Ruff 0.17.4](../tasks/task-000007-ruff-0174.md)
 - [Task 000008: WhiteNoise 6.12.0](../tasks/task-000008-whitenoise-6120.md)
+- [Task 000011: PostgreSQL account unlink repair](../tasks/task-000011-postgres-account-unlink.md)
 - [Task 000009: Psycopg 3.3.8](../tasks/task-000009-psycopg-338.md)
 - [Task 000010: Gunicorn 26.2.0](../tasks/task-000010-gunicorn-2620.md)
