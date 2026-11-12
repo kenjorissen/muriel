@@ -2185,7 +2185,7 @@ class PreceptingFillProposalTests(PreceptingSolverInputTests):
             periods=["AM"],
             scheduler=self.scheduler,
         )
-        create_vacation(
+        vacation = create_vacation(
             physician=director,
             start_date=self.week,
             end_date=self.week,
@@ -2245,7 +2245,7 @@ class PreceptingFillProposalTests(PreceptingSolverInputTests):
         )
         self.assertEqual(
             [reason.summary for reason in exclusions[director.pk].reasons][-2:],
-            ["Vacation 1", "Program Director Interview"],
+            [f"Vacation {vacation.pk}", "Program Director Interview"],
         )
         self.assertEqual(
             [reason.summary for reason in exclusions[interviewer.pk].reasons],
@@ -4342,10 +4342,12 @@ class RetainedPreceptingSolverProposalTests(PreceptingSolverInputTests):
 
     def test_manual_late_doc_choice_requires_fresh_confirmation(self):
         self.ready_week()
-        self.faculty("First")
-        replacement = self.faculty("Replacement")
+        physicians = (self.faculty("First"), self.faculty("Second"))
         proposal = self.retained_proposal()
         review = proposal.late_doc_reviews.get()
+        replacement = next(
+            physician for physician in physicians if physician.pk != review.proposed_physician_id
+        )
         review_proposed_late_doc(
             proposal=proposal,
             on_date=review.date,

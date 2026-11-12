@@ -1,7 +1,7 @@
 Django==5.2.17
 gunicorn==23.0.0
 whitenoise==6.12.0
-psycopg[binary]==3.2.10
+psycopg[binary]==3.3.8
 pypdf==6.21.4
 reportlab==4.4.10
 arabic-reshaper==3.0.1
