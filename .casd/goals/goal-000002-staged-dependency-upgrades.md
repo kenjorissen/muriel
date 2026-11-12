@@ -44,6 +44,7 @@ The coordinator runs sequential Attempts, inspects joined evidence, accepts only
 - Actions v7 accepted at `450576cb1e2e79e01bc5f3afbb1d4a5aac30b3a7`.
 - Ruff 0.17.4 accepted and pushed at `bd50576164ca9f9a42d4c5cbcc244598f8c8e182`; exact Candidate Check and independent Review passed. Clean-environment GitHub run https://github.com/kenjorissen/muriel/actions/runs/43135680516 completed successfully on this exact revision; both `checks` and `Dependency security` passed. A successful Dependabot maintenance run is not equivalent to complete-check evidence.
 - Neither development-only increment required a staging restart; runtime staging verification remains outstanding.
+- WhiteNoise 6.12.0 accepted at `122d63fbdb72789c5d2b57d725e76d17bd6f1114`, from Candidate `8a1d1938d1d320e479a5ac27fe71ae493d6bace5`; authoritative Check and independent Review passed. The change adds manifest-resolved and missing-static-asset verification while preserving deployment settings. Cassidy reported implementation/Check/Review worktree cleanup. Exact-revision GitHub and non-reset staging checks remain outstanding for this increment.
 
 ## Narrow runtime discovery
 
