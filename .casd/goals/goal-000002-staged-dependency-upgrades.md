@@ -50,7 +50,7 @@ The coordinator runs sequential Attempts, inspects joined evidence, accepts only
 
 Psycopg compatibility evidence can use the existing local Docker daemon and cached PostgreSQL 18 image with disposable test data, the shared Python interpreter and Django's existing test runner. This is not a production topology change or permission to use live databases; the Task specifies owned cleanup and cross-backend evidence.
 
-Before authoring the Gunicorn slice, account for its new default control socket (introduced in 25.1). The inspected 26.2.0 upstream `gunicorn/config.py` enables it by default, usually under XDG_RUNTIME_DIR or HOME, and offers `--no-control-socket`. Existing Muriel service management is systemd-owned and no new management interface has been accepted. Preserve that boundary rather than silently adopting the new default. Relevant existing owners are `scripts/start-production`, `ops/systemd/muriel*.service`, `preceptor_project/production_proxy.py`, and launcher/private-Admin tests. Actual Unix-peer and forwarding behavior needs direct runtime evidence; mocked command arguments alone are insufficient. Official release notes: https://github.com/benoitc/gunicorn/blob/26.2.0/docs/content/2026-news.md .
+The Gunicorn slice accounts for its new default control socket (introduced in 25.1). The inspected 26.2.0 upstream `gunicorn/config.py` enables it by default, usually under XDG_RUNTIME_DIR or HOME, and offers `--no-control-socket`. Existing Muriel service management is systemd-owned and no new management interface has been accepted. Preserve that boundary rather than silently adopting the new default. Relevant existing owners are `scripts/start-production`, `ops/systemd/muriel*.service`, `preceptor_project/production_proxy.py`, and launcher/private-Admin tests. Actual Unix-peer and forwarding behavior needs direct runtime evidence; mocked command arguments alone are insufficient. Official release notes: https://github.com/benoitc/gunicorn/blob/26.2.0/docs/content/2026-news.md .
 
 ## Tasks
 
@@ -58,3 +58,4 @@ Before authoring the Gunicorn slice, account for its new default control socket 
 - [Task 000007: Ruff 0.17.4](../tasks/task-000007-ruff-0174.md)
 - [Task 000008: WhiteNoise 6.12.0](../tasks/task-000008-whitenoise-6120.md)
 - [Task 000009: Psycopg 3.3.8](../tasks/task-000009-psycopg-338.md)
+- [Task 000010: Gunicorn 26.2.0](../tasks/task-000010-gunicorn-2620.md)
