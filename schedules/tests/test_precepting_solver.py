@@ -2721,6 +2721,17 @@ class PreceptingFillProposalTests(PreceptingSolverInputTests):
             scheduler=self.scheduler,
         )
 
+        # Retain both PM positions so Fill cannot also assign Thin Monday here.
+        # Otherwise both Late Doc candidates can overlap PM Precepting and the
+        # selected name is an arbitrary tie, not evidence of the overlap policy.
+        assign_preceptor(
+            session=monday_pm,
+            physician=rounder,
+            responsibility=PreceptorAssignment.Responsibility.PRIMARY,
+            primary_position=2,
+            scheduler=self.scheduler,
+        )
+
         proposal = produce_fill_proposal(
             self.preflight(
                 SolveDateRange(self.week, date(2025, 2, 7)),

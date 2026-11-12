@@ -72,3 +72,20 @@ invitation to controlled accounts and verify the sender, public HTTPS links,
 and completion flows before opening access to users.
 
 Tests use Django's in-memory email backend, so they never deliver network mail.
+
+## Django email compatibility follow-up
+
+Django 6.1 deprecates `EMAIL_BACKEND` and the `EMAIL_HOST`, `EMAIL_HOST_USER`,
+`EMAIL_HOST_PASSWORD`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_USE_SSL`, and
+`EMAIL_TIMEOUT` settings in favor of `MAILERS`. These settings still work in
+6.1.3; the compatibility upgrade deliberately retains them and does not suppress
+their deprecation warnings. The operational `PRECEPTOR_EMAIL_*` inputs above,
+manual invitations, synchronous delivery, console default, and test-locmem mode
+are unchanged.
+
+Before adopting Django 2028, migrate the internal settings to `MAILERS` in a
+separate bounded change while preserving those environment inputs and transport
+bounds. Verify built-in password recovery, invitation success/failure persistence,
+manual mode, staging's disabled outbound mail, and test backend overrides together.
+No mailer migration, background delivery, or live SMTP verification is implied by
+the 6.1.3 upgrade.
