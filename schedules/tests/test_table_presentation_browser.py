@@ -19,6 +19,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 async function columnIndex(table, label) {
   const headers = table.locator("thead th[scope=col]");
@@ -51,17 +52,18 @@ async function rowForRecord(table, recordLabel) {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
   try {
   const page = await browser.newPage({ viewport: { width: 320, height: 800 } });
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
-  await page.goto(input.baseUrl + "/rounding/list/?month=2025-02", { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + "/rounding/list/?month=2025-02", { waitUntil: "load" });
   await page.locator('input[name="username"]').fill(input.username);
   await page.locator('input[name="password"]').fill(input.password);
   await page.locator('button[type="submit"]').click();
-  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("load");
 
   const table = page.locator("#rounding-list");
   const roundingRow = table.locator("tbody tr").first();
@@ -75,7 +77,7 @@ async function rowForRecord(table, recordLabel) {
   });
   if (!overflow) throw new Error("The table does not keep narrow-screen overflow inside its scroll frame.");
 
-  await page.goto(input.baseUrl + "/physicians/", { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + "/physicians/", { waitUntil: "load" });
   for (const tableId of ["physicians-active", "physicians-inactive"]) {
     const directoryTable = page.locator(`#${tableId}`);
     await columnIndex(directoryTable, "Physician");
@@ -148,7 +150,7 @@ async function rowForRecord(table, recordLabel) {
     throw new Error("The Browser custom Capacity cell does not render its accessible custom and schedule-derived meaning.");
   }
 
-  await page.goto(input.baseUrl + "/reports/community-preceptor-stipend/?month=2025-02", { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + "/reports/community-preceptor-stipend/?month=2025-02", { waitUntil: "load" });
   const stipendDetails = page.locator("#stipend-itemized-shifts");
   const emptyCell = stipendDetails.locator("tbody .data-table__empty");
   if (await emptyCell.count() !== 1) {
@@ -261,6 +263,7 @@ async function rowForRecord(table, recordLabel) {
     throw new Error("Toned row-header cells do not receive their semantic fills.");
   }
 
+  await requests.finish();
   } finally {
     await browser.close();
   }

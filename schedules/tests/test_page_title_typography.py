@@ -13,11 +13,13 @@ _BROWSER_RUNNER = r"""
 const { readFileSync } = require("fs");
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
   try {
   const page = await browser.newPage();
-  await page.route("**/*", (route) => route.abort());
+  const requests = observeRequests(page);
+  await page.route("**/*", (route) => requests.abortExcluded(route));
   for (const width of [1280, 375]) {
     await page.setViewportSize({ width, height: 900 });
     for (const [name, html] of input.pages) {
@@ -47,6 +49,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
       }
     }
   }
+  await requests.finish();
   } finally {
     await browser.close();
   }

@@ -1,6 +1,7 @@
 // Lifecycle boundary for embedded runners that previously killed only Node on
 // a Python deadline. Playwright owns Chromium and its process/profile cleanup.
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require("./browser_requests.cjs");
 
 function withDeadline(work, milliseconds, description) {
   let timer;
@@ -28,7 +29,11 @@ async function withBrowserPage(executablePath, work, {
       context.setDefaultNavigationTimeout(actionTimeoutMs);
       return context.newPage();
     })(), 30_000, "Browser page setup");
-    await withDeadline(work({ page, context }), workTimeoutMs, "Browser scenario");
+    const requests = observeRequests(page);
+    await withDeadline((async () => {
+      await work({ page, context, requests });
+      await requests.finish({ timeoutMs: actionTimeoutMs });
+    })(), workTimeoutMs, "Browser scenario");
   } catch (error) {
     failure = error;
   } finally {

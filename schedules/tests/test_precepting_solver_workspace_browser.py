@@ -55,7 +55,7 @@ function waitForBoundary(promise, description) {
 
 let interceptedRequest;
 let closing = false;
-withBrowserPage(input.browserExecutable, async ({ page }) => {
+withBrowserPage(input.browserExecutable, async ({ page, requests }) => {
     await page.route("**/*", async (route) => {
     if (
       interceptedRequest &&
@@ -70,6 +70,10 @@ withBrowserPage(input.browserExecutable, async ({ page }) => {
           (response) => response.url() === boundaryUrl && response.request().method() === interceptedRequest.method,
           { timeout: REQUEST_BOUNDARY_TIMEOUT_MS }
         );
+        // These controlled POST endpoints return 204 to keep the current
+        // document. Chromium reports that navigation as ERR_ABORTED; permit
+        // only this intercepted request, and only after its actual 204 response.
+        requests.expectFailure(route.request(), { status: 204, errorText: "net::ERR_ABORTED" });
         const [, response] = await Promise.all([
           route.continue({ url: boundaryUrl }), responsePromise,
         ]);
@@ -82,11 +86,11 @@ withBrowserPage(input.browserExecutable, async ({ page }) => {
     }
     const script = Object.entries(input.staticScripts || {}).find(([suffix]) => route.request().url().endsWith(suffix));
     if (script) return route.fulfill({ body: readFileSync(script[1]), contentType: script[0].endsWith(".css") ? "text/css" : "text/javascript" });
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
     });
     for (const action of input.actions) {
     if (action.kind === "goto") {
-      await page.goto(input.baseUrl + action.path, { waitUntil: "domcontentloaded" });
+      await page.goto(input.baseUrl + action.path, { waitUntil: "load" });
     } else if (action.kind === "scroll") {
       await page.locator(action.selector).scrollIntoViewIfNeeded();
     } else if (action.kind === "hover") {
@@ -101,7 +105,7 @@ withBrowserPage(input.browserExecutable, async ({ page }) => {
       await page.locator(action.selector).focus();
     } else if (action.kind === "press") {
       await Promise.all([
-        page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+        page.waitForNavigation({ waitUntil: "load" }),
         page.locator(action.selector).press(action.key),
       ]);
     } else if (action.kind === "url-equals") {
@@ -189,7 +193,7 @@ withBrowserPage(input.browserExecutable, async ({ page }) => {
           ...(action.waitForRequest ? { noWaitAfter: true } : {}),
         }
       );
-      if (!action.waitForRequest) await page.waitForLoadState("domcontentloaded");
+      if (!action.waitForRequest) await page.waitForLoadState("load");
     } else if (action.kind === "check") {
       await page.locator(action.selector).check();
     } else if (action.kind === "checked") {
@@ -197,8 +201,10 @@ withBrowserPage(input.browserExecutable, async ({ page }) => {
         throw new Error(`Unexpected checked state for ${action.selector}`);
       }
     } else if (action.kind === "submit") {
-      await page.locator(action.selector).evaluate((form) => form.submit());
-      await page.waitForLoadState("domcontentloaded");
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: "load" }),
+        page.locator(action.selector).evaluate((form) => form.submit()),
+      ]);
     } else if (action.kind === "request-observed") {
       await waitForBoundary(interceptedRequest.observed, "the intercepted request");
     } else if (action.kind === "release-request") {

@@ -20,7 +20,7 @@ const path = require("path");
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { withBrowserPage } = require(process.env.PRECEPTOR_BROWSER_SESSION);
 
-withBrowserPage(input.browserExecutable, async ({ context, page }) => {
+withBrowserPage(input.browserExecutable, async ({ context, page, requests }) => {
   await context.addCookies([{
     name: input.sessionCookie.name,
     value: input.sessionCookie.value,
@@ -33,7 +33,7 @@ withBrowserPage(input.browserExecutable, async ({ context, page }) => {
     if (route.request().url().endsWith("/static/schedules/role-attributes.js")) {
       return route.fulfill({ body: readFileSync(path.join(path.dirname(input.stylesheet), "role-attributes.js")), contentType: "text/javascript" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
 
   const forms = input.forms;
@@ -41,7 +41,7 @@ withBrowserPage(input.browserExecutable, async ({ context, page }) => {
   for (const width of [1280, 375]) {
     await page.setViewportSize({ width, height: 900 });
     for (const [label, url] of forms) {
-      const response = await page.goto(input.baseUrl + url, { waitUntil: "domcontentloaded" });
+      const response = await page.goto(input.baseUrl + url, { waitUntil: "load" });
       if (!response || !response.ok()) {
         throw new Error(`${label} at ${width}px did not load successfully (${response ? response.status() : "no response"}).`);
       }
@@ -128,7 +128,7 @@ const { readFileSync } = require("fs");
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { withBrowserPage } = require(process.env.PRECEPTOR_BROWSER_SESSION);
 
-withBrowserPage(input.browserExecutable, async ({ context, page }) => {
+withBrowserPage(input.browserExecutable, async ({ context, page, requests }) => {
   await context.addCookies([{
     name: input.sessionCookie.name,
     value: input.sessionCookie.value,
@@ -138,7 +138,7 @@ withBrowserPage(input.browserExecutable, async ({ context, page }) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
 
   for (const [width, date] of [[1280, "2026-10-01"], [375, "2026-10-02"]]) {
@@ -187,7 +187,7 @@ const { readFileSync } = require("fs");
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { withBrowserPage } = require(process.env.PRECEPTOR_BROWSER_SESSION);
 
-withBrowserPage(input.browserExecutable, async ({ context, page }) => {
+withBrowserPage(input.browserExecutable, async ({ context, page, requests }) => {
   await context.addCookies([{
     name: input.sessionCookie.name,
     value: input.sessionCookie.value,
@@ -197,13 +197,13 @@ withBrowserPage(input.browserExecutable, async ({ context, page }) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
 
   for (const width of [1280, 375]) {
     await page.setViewportSize({ width, height: 900 });
     for (const [label, url, requiresReturnLink, hasWideFollowingSurface, requiresFullWidth] of input.pages) {
-      const response = await page.goto(input.baseUrl + url, { waitUntil: "domcontentloaded" });
+      const response = await page.goto(input.baseUrl + url, { waitUntil: "load" });
       if (!response || !response.ok()) {
         throw new Error(`${label} at ${width}px did not load successfully (${response ? response.status() : "no response"}).`);
       }

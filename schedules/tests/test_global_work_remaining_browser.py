@@ -24,22 +24,24 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
   try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
-  await page.goto(input.baseUrl + "/schedule/work-remaining/", { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + "/schedule/work-remaining/", { waitUntil: "load" });
   await page.locator('input[name="username"]').fill(input.username);
   await page.locator('input[name="password"]').fill(input.password);
   await page.locator('button[type="submit"]').click();
-  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("load");
   if (!page.url().includes("/schedule/work-remaining/")) {
     throw new Error(
       "Sign in did not reach Work Remaining at " + page.url() + ": " + await page.locator("body").innerText()
@@ -148,6 +150,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     if (layout.clippedCells) throw new Error("Work Remaining clips wrapped content at " + width + "px.");
     if (!layout.workRemainingHasSurplus) throw new Error("Work Remaining does not reserve flexible surplus for Work remaining at " + width + "px.");
   }
+  await requests.finish();
   } finally {
     await browser.close();
   }

@@ -15,6 +15,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
@@ -26,10 +27,11 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     url: input.baseUrl,
   }]);
   const page = await context.newPage();
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     const script = Object.entries(input.staticFiles).find(([suffix]) => route.request().url().endsWith(suffix));
     if (script) return route.fulfill({ body: readFileSync(script[1]), contentType: script[0].endsWith(".css") ? "text/css" : "text/javascript" });
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
   const response = await page.goto(input.baseUrl + input.url, { waitUntil: "load" });
   if (!response || !response.ok()) throw new Error("Physician picker did not load.");
@@ -181,6 +183,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   });
   if (!containedError) throw new Error("Picker validation must remain contained without overlapping selections.");
 
+  await requests.finish();
   } finally {
     await browser.close();
   }

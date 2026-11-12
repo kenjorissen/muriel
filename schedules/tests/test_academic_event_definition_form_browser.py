@@ -15,6 +15,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
@@ -22,10 +23,11 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   const context = await browser.newContext();
   await context.addCookies([{ name: input.sessionCookie.name, value: input.sessionCookie.value, url: input.baseUrl }]);
   const page = await context.newPage();
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     const script = Object.entries(input.staticFiles).find(([suffix]) => route.request().url().endsWith(suffix));
     if (script) return route.fulfill({ body: readFileSync(script[1]), contentType: "text/javascript" });
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
   const response = await page.goto(input.baseUrl + input.url, { waitUntil: "load" });
   if (!response || !response.ok()) throw new Error("Definition form did not load.");
@@ -74,6 +76,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   }
   await picker.getByRole("button", { name: "Remove Default Physician", exact: true }).press("Enter");
   if (await choice.isChecked()) throw new Error("Removing the default physician retained its checkbox.");
+  await requests.finish();
   } finally {
     await browser.close();
   }

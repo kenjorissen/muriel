@@ -15,6 +15,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
@@ -26,13 +27,14 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     url: input.baseUrl,
   }]);
   const page = await context.newPage();
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
-  await page.goto(input.baseUrl + "/schedule/lead-times/", { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + "/schedule/lead-times/", { waitUntil: "load" });
   await page.getByRole("main").getByRole("heading", { name: "Lead Times" }).waitFor();
   const localNavigation = page.locator(".workspace-local-navigation");
   if (await localNavigation.getByRole("link", { name: "Lead Times" }).getAttribute("aria-current") !== "page") {
@@ -138,6 +140,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
       || await historyCell(fixtureHistoryRows[0], "Prior value").innerText() !== "5 months") {
     throw new Error("Initial Precepting history does not retain the fixture's change to 8 months.");
   }
+  await requests.finish();
   } finally {
     await browser.close();
   }

@@ -15,6 +15,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
@@ -28,6 +29,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     url: input.baseUrl,
   }]);
   const page = await context.newPage();
+  const requests = observeRequests(page);
   let widerTextFixture = false;
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
@@ -41,7 +43,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
       ` : "";
       return route.fulfill({ body: readFileSync(input.stylesheet, "utf8") + fixture, contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
 
   for (const [url, periodControls, firstSection, label] of [
@@ -170,6 +172,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     }
   }
 
+  await requests.finish();
   } finally {
     await browser.close();
   }

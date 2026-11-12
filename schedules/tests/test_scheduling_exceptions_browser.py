@@ -20,6 +20,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
@@ -27,14 +28,15 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.addCookies([{ name: input.sessionCookie.name, value: input.sessionCookie.value, url: input.baseUrl }]);
   const page = await context.newPage();
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
 
-  await page.goto(input.baseUrl + input.assignmentUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + input.assignmentUrl, { waitUntil: "load" });
   const currentFindings = page.locator('[aria-labelledby="current-findings-heading"]');
   if ((await currentFindings.count()) !== 1) {
     throw new Error("The assignment editor did not expose one unified current-findings section.");
@@ -46,7 +48,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     throw new Error("Current findings should be an ordinary section, not a disclosure.");
   }
   await currentFindings.locator("textarea[name=reason]").first().fill("External coverage is unavailable.");
-  await Promise.all([page.waitForLoadState("domcontentloaded"), currentFindings.getByRole("button", { name: "Acknowledge exception" }).first().click()]);
+  await Promise.all([page.waitForNavigation({ waitUntil: "load" }), currentFindings.getByRole("button", { name: "Acknowledge exception" }).first().click()]);
   if (!(await currentFindings.textContent()).includes("Acknowledged exception") || !(await currentFindings.textContent()).includes("External coverage is unavailable.")) {
     throw new Error("The acknowledgement was not retained on the assignment editor.");
   }
@@ -54,18 +56,18 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     throw new Error("Acknowledged exceptions should remain in the ordinary findings section.");
   }
 
-  await page.goto(input.baseUrl + input.monthUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + input.monthUrl, { waitUntil: "load" });
   const acknowledgedSlot = page.locator(`a.assignment-slot-link[href^="${input.assignmentUrl}"]`);
   if ((await acknowledgedSlot.count()) !== 1 || !(await acknowledgedSlot.locator(".calendar-finding-indicator--exception").count())) {
     throw new Error("The acknowledged session finding was not marked on its assignment slot.");
   }
 
-  await page.goto(input.baseUrl + input.assignmentUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + input.assignmentUrl, { waitUntil: "load" });
   const weekFinding = page.locator("section.finding", { hasText: "No normal rounder is recorded" });
   await weekFinding.locator("textarea[name=reason]").fill("No faculty member is available to round this week.");
-  await Promise.all([page.waitForLoadState("domcontentloaded"), weekFinding.getByRole("button", { name: "Acknowledge exception" }).click()]);
+  await Promise.all([page.waitForNavigation({ waitUntil: "load" }), weekFinding.getByRole("button", { name: "Acknowledge exception" }).click()]);
 
-  await page.goto(input.baseUrl + input.monthUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + input.monthUrl, { waitUntil: "load" });
   const dateHeader = page.locator(`time[datetime="${input.weekStart}"]`);
   const affectedWeek = page.getByRole("rowgroup").filter({ has: dateHeader });
   const dateGutter = affectedWeek.locator(".calendar-lattice-date-gutter");
@@ -78,7 +80,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     throw new Error("The Precepting month week gutter showed a status or finding indicator.");
   }
 
-  await page.goto(input.baseUrl + input.listUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + input.listUrl, { waitUntil: "load" });
   const listedSession = page
     .locator("tr", { has: page.locator(`time[datetime="${input.sessionDate}"]`) })
     .filter({ hasText: "AM" });
@@ -87,14 +89,15 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     throw new Error("The acknowledged week finding was not retained in the Precepting list.");
   }
 
-  await page.goto(input.baseUrl + input.assignmentUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + input.assignmentUrl, { waitUntil: "load" });
   await page.locator("select[name=physician]").selectOption(String(input.physicianId));
-  await Promise.all([page.waitForLoadState("domcontentloaded"), page.getByRole("button", { name: "Save assignment" }).click()]);
-  await page.goto(input.baseUrl + input.exceptionsUrl, { waitUntil: "domcontentloaded" });
+  await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.getByRole("button", { name: "Save assignment" }).click()]);
+  await page.goto(input.baseUrl + input.exceptionsUrl, { waitUntil: "load" });
   const retainedAcknowledgement = page.locator("li.finding", { hasText: "External coverage is unavailable." });
   if ((await retainedAcknowledgement.count()) !== 1 || !(await retainedAcknowledgement.textContent()).includes("No longer applies.") || (await retainedAcknowledgement.textContent()).includes("fingerprint") || (await retainedAcknowledgement.textContent()).includes("stale")) {
     throw new Error("The retained exception history did not show its current status safely.");
   }
+  await requests.finish();
   } finally {
     await browser.close();
   }

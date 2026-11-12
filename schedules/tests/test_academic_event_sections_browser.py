@@ -24,6 +24,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
@@ -35,13 +36,14 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     url: input.baseUrl,
   }]);
   const page = await context.newPage();
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
-  const response = await page.goto(input.baseUrl + input.url, { waitUntil: "domcontentloaded" });
+  const response = await page.goto(input.baseUrl + input.url, { waitUntil: "load" });
   if (!response || !response.ok()) {
     throw new Error(`Academic Events List did not load (${response ? response.status() : "no response"}).`);
   }
@@ -295,6 +297,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   });
   if (!narrowLayout) throw new Error("Unscheduled yearly resolution controls do not wrap cleanly on a narrow screen.");
 
+  await requests.finish();
   } finally {
     await browser.close();
   }

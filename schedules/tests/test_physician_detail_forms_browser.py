@@ -17,6 +17,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
@@ -28,6 +29,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     url: input.baseUrl,
   }]);
   const page = await context.newPage();
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
@@ -35,12 +37,12 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     if (route.request().url().endsWith("/static/schedules/capacity-override-control.js")) {
       return route.fulfill({ body: readFileSync(input.capacityOverrideScript), contentType: "text/javascript" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
 
   for (const width of [1280, 375]) {
     await page.setViewportSize({ width, height: 900 });
-    const response = await page.goto(input.baseUrl + input.url, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(input.baseUrl + input.url, { waitUntil: "load" });
     if (!response || !response.ok()) throw new Error(`Detail at ${width}px did not load.`);
     const result = await page.evaluate(() => {
       const intro = document.querySelector("h1")?.closest("header");
@@ -154,7 +156,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
       throw new Error(`Capacity override state does not follow the checkbox at ${width}px.`);
     }
 
-    const enabledResponse = await page.goto(input.enabledUrl, { waitUntil: "domcontentloaded" });
+    const enabledResponse = await page.goto(input.enabledUrl, { waitUntil: "load" });
     if (!enabledResponse || !enabledResponse.ok()) throw new Error(`Enabled detail at ${width}px did not load.`);
     const initiallyEnabled = await page.evaluate(() => {
       const useOverride = document.querySelector('input[name="use_override"]');
@@ -164,6 +166,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     if (!initiallyEnabled) throw new Error(`Enabled capacity override is not usable at ${width}px.`);
   }
 
+  await requests.finish();
   } finally {
     await browser.close();
   }

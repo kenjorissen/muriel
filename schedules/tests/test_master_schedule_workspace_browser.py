@@ -24,22 +24,24 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
   try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
-  await page.goto(input.baseUrl + "/schedule/?date=2025-02-03", { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + "/schedule/?date=2025-02-03", { waitUntil: "load" });
   await page.locator('input[name="username"]').fill(input.username);
   await page.locator('input[name="password"]').fill(input.password);
   await page.locator('button[type="submit"]').click();
-  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("load");
   if (await page.locator(".master-schedule-surface").count() !== 2) {
     throw new Error("Master Schedule does not show its two weekly grids at desktop width.");
   }
@@ -236,7 +238,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   await page.locator(".physician-scope-chooser summary").click();
   await page.locator(`input[name="physicians"][value="${input.focusPhysicianId}"]`).check();
   await page.getByRole("button", { name: "Apply focus" }).click();
-  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("load");
   if (!new URL(await pdfAction.getAttribute("href"), input.baseUrl).searchParams.getAll("physicians").includes(String(input.focusPhysicianId))) {
     throw new Error("Master Schedule PDF action does not carry the physician focus.");
   }
@@ -245,7 +247,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     throw new Error("Focused Faculty availability does not retain the selected physician only.");
   }
   await page.getByRole("button", { name: "Everyone" }).click();
-  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("load");
   await page.setViewportSize({ width: 320, height: 800 });
   const scrollPositions = await page.locator(".master-schedule-surface .table-scroll-frame").evaluateAll((frames) => {
     if (frames.length !== 2) throw new Error("Master Schedule does not show two weekly grids.");
@@ -285,7 +287,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   if (!await counterclockwiseLabels()) {
     throw new Error("Clinic period labels do not retain counterclockwise glyph orientation in print rendering.");
   }
-  await page.goto(input.baseUrl + "/schedule/?date=2025-09-01", { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + "/schedule/?date=2025-09-01", { waitUntil: "load" });
   const laborDay = page.locator('.master-schedule-grid--clinic th[scope="col"]', { hasText: "Labor Day" });
   if (await laborDay.count() !== 1 || await laborDay.getAttribute("aria-label")) {
     throw new Error("Labor Day must be an informational Master Schedule header label.");
@@ -329,7 +331,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   ])) {
     throw new Error("Labor Day does not close the matching date lane in each clinic period.");
   }
-  await page.goto(input.baseUrl + "/schedule/?date=2025-12-24", { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + "/schedule/?date=2025-12-24", { waitUntil: "load" });
   const christmasEve = page.locator('.master-schedule-grid th[scope="col"]', { hasText: "Christmas Eve, PM" });
   if (await christmasEve.count() !== 2 || await christmasEve.locator('.calendar-holiday-header[aria-label="Holiday: Christmas Eve, PM only"]').count() !== 2) {
     throw new Error("Christmas Eve does not retain its PM-only informative labels in both grids.");
@@ -341,6 +343,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   ])) {
     throw new Error("Christmas Eve must close only the clinic afternoon block.");
   }
+  await requests.finish();
   } finally {
     await browser.close();
   }

@@ -25,6 +25,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
@@ -36,6 +37,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     url: input.baseUrl,
   }]);
   const page = await context.newPage();
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
@@ -43,7 +45,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     if (route.request().url().endsWith("/static/schedules/calendar-day-actions.js")) {
       return route.fulfill({ body: readFileSync(input.script), contentType: "application/javascript" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
 
   const urlMatches = (candidate, expected) => {
@@ -79,7 +81,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     };
     page.on("framenavigated", observeNavigation);
     await Promise.all([
-      page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+      page.waitForNavigation({ waitUntil: "load" }),
       page.locator(selector).dispatchEvent("click", { button: 0, detail: 1 }),
     ]);
     await assertForm(calendar);
@@ -90,7 +92,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   };
 
   for (const calendar of input.actionCalendars) {
-    const response = await page.goto(input.baseUrl + calendar.url, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(input.baseUrl + calendar.url, { waitUntil: "load" });
     if (!response || !response.ok()) {
       throw new Error(`${calendar.name} calendar did not load successfully.`);
     }
@@ -160,13 +162,13 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 
     const headerSelector = `.calendar-lattice-date-cell[data-calendar-day-action="${calendar.actionId}"] .calendar-date-header`;
     await activateAndCheckNavigation(calendar, headerSelector);
-    await page.goto(input.baseUrl + calendar.url, { waitUntil: "domcontentloaded" });
+    await page.goto(input.baseUrl + calendar.url, { waitUntil: "load" });
     const bodySelector = `.calendar-content-cell[data-calendar-day-action="${calendar.actionId}"]`;
     await activateAndCheckNavigation(calendar, bodySelector);
   }
 
   for (const calendar of input.layoutCalendars) {
-    await page.goto(input.baseUrl + calendar.url, { waitUntil: "domcontentloaded" });
+    await page.goto(input.baseUrl + calendar.url, { waitUntil: "load" });
     const result = await page.evaluate((calendar) => {
       const grid = [...document.querySelectorAll('[role="grid"]')]
         .find((element) => element.getAttribute("aria-label") === calendar.label);
@@ -268,6 +270,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     }
   }
 
+  await requests.finish();
   } finally {
     await browser.close();
   }

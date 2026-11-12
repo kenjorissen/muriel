@@ -14,11 +14,13 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
   try {
   const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
+  const requests = observeRequests(page);
   await page.setContent(input.html);
   await page.addScriptTag({ content: readFileSync(input.script, "utf8") });
 
@@ -72,6 +74,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
   }
 
   const periodPicker = await browser.newPage();
+  const periodRequests = observeRequests(periodPicker);
   await periodPicker.setContent(`
     <form method="get" data-period-picker-form>
       <label for="period-start">Start date</label>
@@ -104,6 +107,8 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
     throw new Error("The native period fallback must submit the current complete date range.");
   }
 
+  await requests.finish();
+  await periodRequests.finish();
   } finally {
     await browser.close();
   }

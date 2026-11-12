@@ -1605,6 +1605,7 @@ const { readFileSync } = require("fs");
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
+const { observeRequests } = require(process.env.PRECEPTOR_BROWSER_REQUESTS);
 
 function describesUnavailableRange(text, unavailable, temporalReason) {
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -1616,7 +1617,7 @@ function describesUnavailableRange(text, unavailable, temporalReason) {
 }
 
 async function assertUnavailableCoverage(page, url, unavailable, selected, temporalReason) {
-  await page.goto(new URL(url, input.baseUrl).href, { waitUntil: "domcontentloaded" });
+  await page.goto(new URL(url, input.baseUrl).href, { waitUntil: "load" });
   const choice = page.locator(`input[name=coverage][value="${unavailable}"]`);
   const selectedChoice = page.locator(`input[name=coverage][value="${selected}"]`);
   if (await choice.count() !== 1 || !(await choice.isDisabled()) || await selectedChoice.isChecked() !== true) {
@@ -1638,17 +1639,18 @@ async function assertUnavailableCoverage(page, url, unavailable, selected, tempo
   const browser = await chromium.launch({ headless: true, executablePath: input.browserExecutable });
   try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const requests = observeRequests(page);
   await page.route("**/*", (route) => {
     if (route.request().url().endsWith("/static/schedules/application.css")) {
       return route.fulfill({ body: readFileSync(input.stylesheet), contentType: "text/css" });
     }
-    return route.request().resourceType() === "document" ? route.continue() : route.abort();
+    return route.request().resourceType() === "document" ? route.continue() : requests.abortExcluded(route);
   });
-  await page.goto(input.baseUrl + input.reportUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(input.baseUrl + input.reportUrl, { waitUntil: "load" });
   await page.locator('input[name="username"]').fill(input.username);
   await page.locator('input[name="password"]').fill(input.password);
   await page.locator('button[type="submit"]').click();
-  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("load");
 
   const controls = page.locator("form.schedule-report-controls");
   const controlGroups = [];
@@ -1792,6 +1794,7 @@ async function assertUnavailableCoverage(page, url, unavailable, selected, tempo
 
   await assertUnavailableCoverage(page, input.historyOnlyUrl, "scheduled", "history", /(?:ends?|is entirely)\s+.*(?:before|prior to)\s+today/i);
   await assertUnavailableCoverage(page, input.scheduledOnlyUrl, "history", "scheduled", /(?:begins?|starts?|is entirely)\s+.*(?:today|later|on or after)/i);
+  await requests.finish();
   } finally {
     await browser.close();
   }

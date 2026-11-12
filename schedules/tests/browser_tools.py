@@ -22,5 +22,6 @@ def require_browser_tools():
     installation = json.loads(completed.stdout)
     os.environ["PRECEPTOR_PLAYWRIGHT_MODULE"] = installation["module"]
     os.environ["PRECEPTOR_BROWSER_SESSION"] = str(Path(__file__).with_name("browser_session.cjs"))
+    os.environ["PRECEPTOR_BROWSER_REQUESTS"] = str(Path(__file__).with_name("browser_requests.cjs"))
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "0"
     return node, installation["executable"]

@@ -373,6 +373,33 @@ responses and missing-asset 404s. Individual browser scenarios may still
 intercept selected assets to isolate layout or no-JavaScript behavior; those
 fixtures do not replace the real transport regression tests.
 
+Every embedded runner installs `schedules/tests/browser_requests.cjs` before
+navigation (automatically through `withBrowserPage`, explicitly in direct
+runners). HTTP errors and `requestfailed` transport errors accumulate with
+method, URL and status/error diagnostics and fail the Node/Django assertion
+boundary even when content checks pass. Navigations wait for `load` so required
+assets finish before leaving a document. Before success, `requests.finish()`
+waits for `load` and terminal events for outstanding requests, with a 30-second
+completion budget (the session owner's action/scenario budgets still apply).
+This is not a network-idle or quiet-period heuristic: scenarios must await their
+actions and explicitly observe any deferred request they intend to test.
+
+Keep selected local asset fulfillment and no-JavaScript fixtures explicit in
+the runner's routes. Use `requests.abortExcluded(route)` only at an intentional
+fixture exclusion; it exempts that Request's deliberate abort, not other errors
+or URLs. Required assets must remain fulfilled or served, never moved into the
+exclusions to hide failures. Tested error responses use
+`requests.expectFailure(request, { status: ... })` for the exact intercepted
+request and status. The solver's controlled mutation endpoints additionally
+permit `net::ERR_ABORTED` only for their intercepted POST with an actual 204
+response, which deliberately leaves the document in place. There is no blanket
+HTTP-error or cancellation exemption. Request assertions run before teardown,
+not on cancellations caused by closing a failed scenario; the primary scenario
+error and existing intercepted-request release/browser cleanup remain intact.
+`test_browser_requests` captures and asserts negative runner outcomes, including
+missing assets, transport failures and auxiliary server errors after successful
+content assertions, alongside accepted fixture routing.
+
 The check excludes the deterministic, representative reset-tool and multi-year
 synthetic-scenario integration cases; run them when changing those owners:
 
