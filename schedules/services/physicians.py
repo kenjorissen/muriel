@@ -290,10 +290,13 @@ def link_physician_user(*, physician, user, scheduler, reason=""):
 @transaction.atomic
 def unlink_physician_user(*, physician, scheduler, reason=""):
     """Remove a physician's explicit account relationship without deleting either record."""
-    physician = Physician.objects.select_for_update().select_related("user").get(pk=physician.pk)
-    previous_value = _account_identity_value(physician.user)
-    if previous_value is None:
+    # PostgreSQL cannot lock the nullable side of an outer join. Keep both
+    # existing rows locked, but acquire them separately in this transaction.
+    physician = Physician.objects.select_for_update().get(pk=physician.pk)
+    if physician.user_id is None:
         return physician
+    user = get_user_model().objects.select_for_update().get(pk=physician.user_id)
+    previous_value = _account_identity_value(user)
     physician.user = None
     physician.save(update_fields=("user",))
     _record_change(

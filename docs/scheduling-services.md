@@ -11,7 +11,7 @@ models while their definitions remain in domain modules. The `forms` and
 | Owner | Retained facts or read/mutation responsibility | Direct HTTP/form surface and focused evidence |
 | --- | --- | --- |
 | `accounts` | Scheduler invitations, account identity, and account history | `forms.accounts`, `views.accounts`; `test_account_administration`, `test_scheduler_invitations` |
-| `physicians` | Physicians, effective roles, Faculty templates, monthly availability rules, and their history | `forms.physicians`, `views.physicians`; `test_physicians`, `test_monthly_availability_rules` |
+| `physicians` | Physicians, optional account links, effective roles, Faculty templates, monthly availability rules, and their history | `forms.physicians`, `views.physicians`; `test_physicians`, `test_physician_account_identity`, `test_monthly_availability_rules` |
 | `availability_categories` | Custom availability categories, assignments, lifecycle, and history | `forms.physicians`, `views.physicians`; `test_availability_categories` |
 | `vacations` | Vacation reads, lifecycle mutations, and history | `forms.vacations`, `views.vacations`; `test_services`, `test_views` |
 | `academic_events` | Definitions, annual event decisions and participants, lifecycle, history, and Academic Year Calendar definition import | `forms.academic_events`, `views.academic_events`; `test_academic_event_definitions`, `test_import_academic_event_definitions`, `test_annual_academic_event_lifecycle` |
@@ -60,6 +60,19 @@ availability -> slot projection -> schedule-specific policy and findings
                                        |
                     authenticated mutations, history, proposals
 ```
+
+`physicians.unlink_physician_user` retains the scheduling-administrator guard,
+shared mutation authority, and atomic history boundary. It locks the Physician
+without a nullable join, then separately locks its linked account, when present,
+using ordinary Django ORM queries in the same transaction. Both locks last until
+the enclosing transaction completes, including rollback. This avoids PostgreSQL's
+nullable-side `FOR UPDATE` restriction without dropping either row's protection;
+SQLite retains the shared development serialization but does not enforce row locks.
+An already-unlinked Physician is a no-op. Unlinking preserves both records and
+records prior account identity, null resulting identity, actor/time, and an optional
+reason in Physician history; it does not advance calendar month edit times.
+`accounts` remains the owner of account edits/history and delegates link removal
+to this operation, including replacement and production login-access clearing.
 
 `holidays` is a source boundary rather than a calendar-only feature. Its
 projection is consulted by calendars, availability consumers, Master Schedule,

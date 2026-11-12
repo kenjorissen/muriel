@@ -1,12 +1,18 @@
+from concurrent.futures import ThreadPoolExecutor
+from unittest import skipUnless
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import OperationalError, connection, transaction
 from django.db.models.deletion import ProtectedError
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from schedules.forms.accounts import AccountChangeForm, AccountCreationForm
-from schedules.models import PhysicianChange
+from schedules.models import Physician, PhysicianChange
 from schedules.services.physicians import (
     create_physician,
     link_physician_user,
@@ -50,9 +56,14 @@ class PhysicianAccountIdentityTests(TestCase):
             scheduler=self.manager,
             reason="Correct account",
         )
+        self.physician.refresh_from_db()
+        physician_before = Physician.objects.values().get(pk=self.physician.pk)
+        accounts_before = list(get_user_model().objects.order_by("pk").values())
+        before_unlink = timezone.now()
         unlink_physician_user(
             physician=self.physician, scheduler=self.manager, reason="Account removed"
         )
+        after_unlink = timezone.now()
 
         self.physician.refresh_from_db()
         self.assertIsNone(self.physician.user)
@@ -60,8 +71,83 @@ class PhysicianAccountIdentityTests(TestCase):
             physician=self.physician, subject=PhysicianChange.Subject.ACCOUNT_IDENTITY
         )
         self.assertEqual(changes.count(), 3)
-        self.assertEqual(changes.latest("pk").previous_value["email"], "replacement@example.com")
-        self.assertIsNone(changes.latest("pk").recorded_value)
+        change = changes.latest("pk")
+        self.assertEqual(
+            change.previous_value,
+            {
+                "user_id": replacement.pk,
+                "email": "replacement@example.com",
+                "username": "replacement",
+                "is_active": True,
+            },
+        )
+        self.assertIsNone(change.recorded_value)
+        self.assertEqual(change.changed_by, self.manager)
+        self.assertEqual(change.reason, "Account removed")
+        self.assertGreaterEqual(change.changed_at, before_unlink)
+        self.assertLessEqual(change.changed_at, after_unlink)
+        self.assertEqual(
+            Physician.objects.values().get(pk=self.physician.pk),
+            physician_before | {"user_id": None},
+        )
+        self.assertEqual(list(get_user_model().objects.order_by("pk").values()), accounts_before)
+
+    def test_unlink_already_unlinked_physician_preserves_history(self):
+        history_before = list(PhysicianChange.objects.order_by("pk").values())
+
+        result = unlink_physician_user(physician=self.physician, scheduler=self.manager)
+
+        self.assertEqual(result.pk, self.physician.pk)
+        self.assertIsNone(result.user_id)
+        self.physician.refresh_from_db()
+        self.assertIsNone(self.physician.user_id)
+        self.assertEqual(list(PhysicianChange.objects.order_by("pk").values()), history_before)
+
+    def test_unlink_requires_scheduling_administrator_even_for_noop(self):
+        for linked in (False, True):
+            with self.subTest(linked=linked):
+                if linked:
+                    link_physician_user(
+                        physician=self.physician, user=self.account, scheduler=self.manager
+                    )
+                history_before = list(PhysicianChange.objects.order_by("pk").values())
+                with self.assertRaises(PermissionDenied):
+                    unlink_physician_user(physician=self.physician, scheduler=self.scheduler)
+                self.physician.refresh_from_db()
+                self.assertEqual(self.physician.user_id, self.account.pk if linked else None)
+                self.assertEqual(
+                    list(PhysicianChange.objects.order_by("pk").values()), history_before
+                )
+
+    def test_unlink_history_failure_restores_link(self):
+        link_physician_user(physician=self.physician, user=self.account, scheduler=self.manager)
+        history_before = list(PhysicianChange.objects.order_by("pk").values())
+
+        with (
+            patch.object(
+                PhysicianChange.objects, "create", side_effect=RuntimeError("history unavailable")
+            ),
+            self.assertRaisesRegex(RuntimeError, "history unavailable"),
+        ):
+            unlink_physician_user(physician=self.physician, scheduler=self.manager)
+
+        self.physician.refresh_from_db()
+        self.assertEqual(self.physician.user_id, self.account.pk)
+        self.assertEqual(list(PhysicianChange.objects.order_by("pk").values()), history_before)
+
+    def test_unlink_outer_rollback_restores_link_and_history(self):
+        link_physician_user(physician=self.physician, user=self.account, scheduler=self.manager)
+        history_before = list(PhysicianChange.objects.order_by("pk").values())
+
+        with transaction.atomic():
+            result = unlink_physician_user(physician=self.physician, scheduler=self.manager)
+            self.assertIsNone(result.user_id)
+            self.assertEqual(PhysicianChange.objects.count(), len(history_before) + 1)
+            transaction.set_rollback(True)
+
+        self.physician.refresh_from_db()
+        self.assertEqual(self.physician.user_id, self.account.pk)
+        self.assertEqual(list(PhysicianChange.objects.order_by("pk").values()), history_before)
 
     def test_link_rejects_blank_email_and_existing_link(self):
         blank = get_user_model().objects.create_user(
@@ -191,3 +277,58 @@ class PhysicianAccountIdentityTests(TestCase):
         for form in (change_form, creation_form):
             errors = form.errors.as_data()["email"]
             self.assertTrue(errors)
+
+
+@skipUnless(connection.vendor == "postgresql", "PostgreSQL row-lock conformance")
+class PhysicianAccountUnlinkLockTests(TransactionTestCase):
+    def setUp(self):
+        self.manager = get_user_model().objects.create_superuser(
+            username="manager", email="manager@example.com", password="test-password"
+        )
+        self.account = get_user_model().objects.create_user(
+            username="physician-account", email="physician@example.com"
+        )
+        self.physician = Physician.objects.create(display_name="Linked", user=self.account)
+
+    def _probe_locks(self):
+        # Django connections are thread-local. Probe each row independently,
+        # bypassing the application's Python lock and shared mutation authority.
+        locked = []
+        try:
+            for row in (self.physician, self.account):
+                try:
+                    with transaction.atomic():
+                        type(row).objects.select_for_update(nowait=True).get(pk=row.pk)
+                except OperationalError as error:
+                    if getattr(error.__cause__, "sqlstate", None) != "55P03":
+                        raise
+                    locked.append(True)
+                else:
+                    locked.append(False)
+            return locked
+        finally:
+            connection.close()
+
+    def _assert_lock_lifetime(self, *, rollback):
+        with ThreadPoolExecutor(max_workers=1) as probe:
+            self.assertEqual(probe.submit(self._probe_locks).result(timeout=10), [False, False])
+            with transaction.atomic():
+                unlink_physician_user(physician=self.physician, scheduler=self.manager)
+                self.assertEqual(probe.submit(self._probe_locks).result(timeout=10), [True, True])
+                if rollback:
+                    transaction.set_rollback(True)
+            self.assertEqual(probe.submit(self._probe_locks).result(timeout=10), [False, False])
+        self.physician.refresh_from_db()
+        self.assertEqual(self.physician.user_id, self.account.pk if rollback else None)
+        self.assertEqual(
+            PhysicianChange.objects.filter(
+                physician=self.physician, subject=PhysicianChange.Subject.ACCOUNT_IDENTITY
+            ).count(),
+            0 if rollback else 1,
+        )
+
+    def test_both_rows_stay_locked_until_outer_commit(self):
+        self._assert_lock_lifetime(rollback=False)
+
+    def test_both_rows_stay_locked_until_outer_rollback(self):
+        self._assert_lock_lifetime(rollback=True)
