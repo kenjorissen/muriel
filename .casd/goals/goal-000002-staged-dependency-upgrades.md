@@ -42,8 +42,14 @@ The coordinator runs sequential Attempts, inspects joined evidence, accepts only
 ## Integration evidence
 
 - Actions v7 accepted at `450576cb1e2e79e01bc5f3afbb1d4a5aac30b3a7`.
-- Ruff 0.17.4 accepted and pushed at `bd50576164ca9f9a42d4c5cbcc244598f8c8e182`; exact Candidate Check and independent Review passed. Clean-environment GitHub run https://github.com/kenjorissen/muriel/actions/runs/43135680516 was launched for this revision; its outcome is pending inspection. A successful Dependabot maintenance run is not equivalent to complete-check evidence.
+- Ruff 0.17.4 accepted and pushed at `bd50576164ca9f9a42d4c5cbcc244598f8c8e182`; exact Candidate Check and independent Review passed. Clean-environment GitHub run https://github.com/kenjorissen/muriel/actions/runs/43135680516 completed successfully on this exact revision; both `checks` and `Dependency security` passed. A successful Dependabot maintenance run is not equivalent to complete-check evidence.
 - Neither development-only increment required a staging restart; runtime staging verification remains outstanding.
+
+## Narrow runtime discovery
+
+Psycopg compatibility evidence can use the existing local Docker daemon and cached PostgreSQL 18 image with disposable test data, the shared Python interpreter and Django's existing test runner. This is not a production topology change or permission to use live databases; the Task specifies owned cleanup and cross-backend evidence.
+
+Before authoring the Gunicorn slice, account for its new default control socket (introduced in 25.1). The inspected 26.2.0 upstream `gunicorn/config.py` enables it by default, usually under XDG_RUNTIME_DIR or HOME, and offers `--no-control-socket`. Existing Muriel service management is systemd-owned and no new management interface has been accepted. Preserve that boundary rather than silently adopting the new default. Relevant existing owners are `scripts/start-production`, `ops/systemd/muriel*.service`, `preceptor_project/production_proxy.py`, and launcher/private-Admin tests. Actual Unix-peer and forwarding behavior needs direct runtime evidence; mocked command arguments alone are insufficient. Official release notes: https://github.com/benoitc/gunicorn/blob/26.2.0/docs/content/2026-news.md .
 
 ## Tasks
 
