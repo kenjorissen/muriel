@@ -12,4 +12,5 @@
 - [Task 000009: Psycopg 3.3.8](tasks/task-000009-psycopg-338.md)
 - [Task 000012: Browser-test static serving](tasks/task-000012-browser-static-serving.md)
 - [Task 000013: Browser request failures](tasks/task-000013-browser-request-failures.md)
-- [Task 000010: Gunicorn 26.2.0](tasks/task-000010-gunicorn-2620.md)
+- [Task 000014: Gunicorn proxy trust repair](tasks/task-000014-gunicorn-proxy-trust.md)
+- [Task 000010: Gunicorn 27.0.0](tasks/task-000010-gunicorn-2620.md)
