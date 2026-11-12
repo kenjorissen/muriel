@@ -111,7 +111,11 @@ Use `scripts/start-production` as the systemd `ExecStart` command. It always
 uses `preceptor_project.production_settings` for production (the separate
 [staging service](staging.md) explicitly selects its own settings), starts foreground Gunicorn, and
 writes access and error output to the standard streams for journald. It refuses
-to run as root.
+to run as root. The shared production/staging launcher explicitly passes
+`--no-control-socket`: Gunicorn 27 enables a management socket by default, but
+Muriel retains systemd as its process-management owner and opens no additional
+management listener. Continue using systemd's SIGTERM graceful shutdown, not
+`gunicornc`.
 
 It binds `/run/muriel/gunicorn.sock` with mode `0770` and starts two synchronous
 workers with a 60-second request timeout and 30-second graceful shutdown

@@ -77,6 +77,7 @@ exec "$python" -m gunicorn preceptor_project.wsgi:application \
     --bind "$bind" \
     "$@" \
     --workers "$workers" \
+    --no-control-socket \
     --timeout "$timeout" \
     --graceful-timeout "$graceful_timeout" \
     $gunicorn_umask \

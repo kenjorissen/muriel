@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from http.client import HTTPConnection
 from pathlib import Path
@@ -124,9 +125,10 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
                 self.assertLess(position + 1, len(arguments))
                 command["options"][argument] = arguments[position + 1]
                 position += 1
-            elif argument == "--capture-output":
+            elif argument in {"--capture-output", "--no-control-socket"}:
                 command["options"][option] = None
             position += 1
+        self.assertIn("--no-control-socket", command["options"])
         self.assertFalse(
             any(
                 argument == "-D" or argument == "--daemon" or argument.startswith("--daemon=")
@@ -272,16 +274,28 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
         fixture.mkdir()
         static_root = fixture / "static"
         static_root.mkdir()
+        (static_root / "fixture.txt").write_bytes(b"Muriel static fixture\n")
         (fixture / "proxy_settings.py").write_text(
             f"from {command['settings_module']} import *\n"
             "DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}}\n"
             "ROOT_URLCONF = 'proxy_urls'\n"
-            f"STATIC_ROOT = {str(static_root)!r}\n"
+            "from pathlib import Path\n"
+            f"STATIC_ROOT = Path({str(static_root)!r})\n"
         )
         (fixture / "proxy_urls.py").write_text(
-            "from django.http import JsonResponse\n"
+            "from django.conf import settings\n"
+            "from django.http import FileResponse, JsonResponse, StreamingHttpResponse\n"
             "from django.urls import path\n"
+            "from django.views.decorators.csrf import csrf_exempt\n"
+            # Only this disposable transport probe is exempt; owning tests cover CSRF.
+            "@csrf_exempt\n"
             "def probe(request):\n"
+            "    if request.method == 'POST':\n"
+            "        return JsonResponse({'submitted': request.POST['message']})\n"
+            "    if request.GET.get('response') == 'stream':\n"
+            "        return StreamingHttpResponse(iter([b'Muriel ', b'stream\\n']))\n"
+            "    if request.GET.get('response') == 'file':\n"
+            "        return FileResponse((settings.STATIC_ROOT / 'fixture.txt').open('rb'))\n"
             "    return JsonResponse({\n"
             "        'secure': request.is_secure(),\n"
             "        'scheme': request.META['wsgi.url_scheme'],\n"
@@ -290,37 +304,48 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
             "    })\n"
             "urlpatterns = [path('probe/', probe, name='health')]\n"
         )
-        # A worker lifecycle hook signals readiness, not a sleep or log/PID match.
+        # Supported hooks establish readiness and master-side worker reaping.
+        # Keep even a mistakenly enabled control socket inside our fixture.
+        control_socket = fixture / "gunicorn.ctl"
+        unix_socket = fixture / "gunicorn.sock"
+        reaped_workers = fixture / "reaped.jsonl"
         config = fixture / "gunicorn.conf.py"
         config.write_text(
-            "import json, os\n"
+            "import json, os, socket\n"
+            f"control_socket = {str(control_socket)!r}\n"
             "def post_worker_init(worker):\n"
             "    policy = {'ips': worker.cfg.forwarded_allow_ips,\n"
-            "              'headers': worker.cfg.secure_scheme_headers}\n"
-            "    os.write(int(os.environ['PROXY_READY_FD']), json.dumps(policy).encode())\n"
+            "              'headers': worker.cfg.secure_scheme_headers,\n"
+            "              'worker': worker.cfg.worker_class_str,\n"
+            "              'workers': worker.cfg.workers,\n"
+            "              'daemon': worker.cfg.daemon,\n"
+            "              'control_disabled': worker.cfg.control_socket_disable,\n"
+            "              'pid': worker.pid,\n"
+            "              'tcp': next(s.getsockname() for s in worker.sockets\n"
+            "                          if s.family == socket.AF_INET)}\n"
+            "    os.write(int(os.environ['PROXY_READY_FD']),\n"
+            "             (json.dumps(policy) + '\\n').encode())\n"
+            "def child_exit(server, worker):\n"
+            f"    with open({str(reaped_workers)!r}, 'a') as output:\n"
+            "        output.write(json.dumps(worker.pid) + '\\n')\n"
         )
-        with (
-            socket.socket() as tcp,
-            socket.socket(socket.AF_UNIX) as unix,
-            (fixture / "server.log").open("w+") as log,
-        ):
-            tcp.bind(("127.0.0.1", 0))
-            tcp.listen()
-            unix.bind(str(fixture / "gunicorn.sock"))
-            unix.listen()
+        # Bind options accumulate rather than override in Gunicorn. Replace the
+        # captured live bind; never append disposable binds alongside a service port.
+        arguments = command["argv"].copy()
+        bind_position = arguments.index("--bind")
+        arguments[bind_position : bind_position + 2] = [
+            "--bind",
+            "127.0.0.1:0",
+            "--bind",
+            f"unix:{unix_socket}",
+        ]
+        with (fixture / "server.log").open("w+") as log:
             ready_read, ready_write = os.pipe()
             try:
                 server = subprocess.Popen(
                     [
                         sys.executable,
-                        *command["argv"],
-                        # Test-only socket activation avoids a port allocation race.
-                        "--bind",
-                        f"fd://{tcp.fileno()}",
-                        "--bind",
-                        f"fd://{unix.fileno()}",
-                        "--workers",
-                        "1",
+                        *arguments,
                         "--config",
                         str(config),
                         "--pythonpath",
@@ -334,28 +359,46 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
                         "PROXY_READY_FD": str(ready_write),
                     },
                     start_new_session=True,
-                    pass_fds=(tcp.fileno(), unix.fileno(), ready_write),
+                    pass_fds=(ready_write,),
                     stdout=log,
                     stderr=subprocess.STDOUT,
                 )
+                policies = []
                 try:
                     os.close(ready_write)
                     ready_write = None
-                    readable, _, _ = select([ready_read], [], [], 20)
-                    if not readable:
-                        log.seek(0)
-                        self.fail(f"Gunicorn worker readiness deadline exceeded:\n{log.read()}")
-                    policy = os.read(ready_read, 65536)
-                    if not policy:
-                        log.seek(0)
-                        self.fail(f"Gunicorn exited before readiness:\n{log.read()}")
-                    yield json.loads(policy), tcp.getsockname(), str(fixture / "gunicorn.sock")
+                    ready_data = b""
+                    deadline = time.monotonic() + 20
+                    while ready_data.count(b"\n") < 2:
+                        readable, _, _ = select(
+                            [ready_read], [], [], max(0, deadline - time.monotonic())
+                        )
+                        if not readable:
+                            log.seek(0)
+                            self.fail(f"Gunicorn worker readiness deadline exceeded:\n{log.read()}")
+                        chunk = os.read(ready_read, 65536)
+                        if not chunk:
+                            log.seek(0)
+                            self.fail(f"Gunicorn exited before readiness:\n{log.read()}")
+                        ready_data += chunk
+                    policies = [json.loads(line) for line in ready_data.splitlines()]
+                    for policy in policies:
+                        self.assertEqual(policy["worker"], "sync")
+                        self.assertEqual(policy["workers"], 2)
+                        self.assertFalse(policy["daemon"])
+                        self.assertTrue(policy["control_disabled"])
+                    self.assertFalse(control_socket.exists())
+                    if not staging:
+                        self.assertEqual(stat.S_IMODE(unix_socket.stat().st_mode), 0o770)
+                    yield policies[0], tuple(policies[0]["tcp"]), str(unix_socket)
+                    self.assertFalse(control_socket.exists())
                 finally:
                     server.terminate()
                     try:
-                        server.wait(timeout=10)
+                        # Launcher grace is 30 seconds; allow master cleanup headroom.
+                        server.wait(timeout=35)
                     except subprocess.TimeoutExpired:
-                        # This session contains only our test master and its worker.
+                        # This session contains only our test master and its workers.
                         os.killpg(server.pid, signal.SIGKILL)
                         server.wait(timeout=5)
                         log.seek(0)
@@ -365,12 +408,21 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
                     self.assertEqual(server.returncode, 0, output)
                     self.assertNotIn("[ERROR]", output, output)
                     self.assertNotIn("Traceback", output, output)
+                    self.assertFalse(unix_socket.exists(), "Gunicorn left its Unix listener")
+                    self.assertFalse(control_socket.exists())
+                    self.assertCountEqual(
+                        [json.loads(line) for line in reaped_workers.read_text().splitlines()],
+                        [policy["pid"] for policy in policies],
+                        "Master must reap every ready worker before exiting",
+                    )
             finally:
                 os.close(ready_read)
                 if ready_write is not None:
                     os.close(ready_write)
 
-    def proxy_request(self, address, headers, *, staging=False):
+    def proxy_request(
+        self, address, headers, *, staging=False, method="GET", path="/probe/?boundary=1", body=None
+    ):
         host = "staging.example.test:10000" if staging else "muriel.example"
         connection = HTTPConnection(host, timeout=5)
         try:
@@ -380,7 +432,7 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
                 connection.sock.connect(address)
             else:
                 connection.sock = socket.create_connection(address, timeout=5)
-            connection.request("GET", "/probe/?boundary=1", headers={"Host": host, **headers})
+            connection.request(method, path, body=body, headers={"Host": host, **headers})
             response = connection.getresponse()
             body = response.read()
             return response.status, dict(response.getheaders()), body
@@ -440,6 +492,34 @@ with open(os.environ["COMMAND_LOG"], "ab") as command_log:
                 json.loads(body),
                 {"secure": True, "scheme": "https", "peer": "127.0.0.1", "admin": None},
             )
+            # Staging, unlike production's Nginx edge, serves static files via WhiteNoise.
+            status, _, body = self.proxy_request(
+                tcp, {"X-Forwarded-Proto": "https"}, staging=True, path="/static/fixture.txt"
+            )
+            self.assertEqual(status, 200, body)
+            self.assertEqual(body, b"Muriel static fixture\n")
+
+    def test_real_gunicorn_accepts_form_bodies_and_streams_responses(self):
+        with self.proxy_server() as (_, _, unix):
+            headers = {
+                "X-Forwarded-Proto": "https",
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
+            status, _, body = self.proxy_request(
+                unix, headers, method="POST", body=b"message=Muriel+%26+WSGI%0A"
+            )
+            self.assertEqual(status, 200, body)
+            self.assertEqual(json.loads(body), {"submitted": "Muriel & WSGI\n"})
+            for kind, expected in (
+                ("stream", b"Muriel stream\n"),
+                ("file", b"Muriel static fixture\n"),
+            ):
+                with self.subTest(response=kind):
+                    status, _, body = self.proxy_request(
+                        unix, headers, path=f"/probe/?response={kind}"
+                    )
+                    self.assertEqual(status, 200, body)
+                    self.assertEqual(body, expected)
 
     def test_readiness_launcher_forces_production_settings(self):
         self.create_virtual_environment()
