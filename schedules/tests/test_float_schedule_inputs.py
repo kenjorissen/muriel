@@ -7,8 +7,9 @@ from unittest.mock import patch
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core.exceptions import ValidationError
-from django.test import LiveServerTestCase, TestCase
+from django.test import TestCase
 from django.urls import reverse
 
 from schedules.forms.physicians import (
@@ -799,9 +800,7 @@ class FloatScheduleInputTests(TestCase):
             )
 
 
-class FloatScheduleInputBrowserTests(LiveServerTestCase):
-    serve_static = False
-
+class FloatScheduleInputBrowserTests(StaticLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         cls.node, cls.browser_executable = require_browser_tools()

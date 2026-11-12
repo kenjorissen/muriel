@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
-from django.test import LiveServerTestCase
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 
 from schedules.models import (
     CasualRounderRule,
@@ -271,9 +271,7 @@ async function rowForRecord(table, recordLabel) {
 """
 
 
-class DataTableBrowserTests(LiveServerTestCase):
-    serve_static = False
-
+class DataTableBrowserTests(StaticLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         cls.node, cls.browser_executable = require_browser_tools()

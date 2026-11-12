@@ -7,9 +7,10 @@ from unittest.mock import patch
 from urllib.parse import urlencode
 
 from django.contrib.auth import get_user_model
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core.exceptions import ValidationError
 from django.db import connection
-from django.test import LiveServerTestCase, TestCase
+from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from pypdf import PdfReader
@@ -1801,9 +1802,7 @@ async function assertUnavailableCoverage(page, url, unavailable, selected, tempo
 """
 
 
-class ScheduleReportPresentationBrowserTests(LiveServerTestCase):
-    serve_static = False
-
+class ScheduleReportPresentationBrowserTests(StaticLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         cls.node, cls.browser_executable = require_browser_tools()

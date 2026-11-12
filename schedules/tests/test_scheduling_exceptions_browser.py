@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import LiveServerTestCase
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.urls import reverse
 
 from schedules.models import EffectiveRole, Physician, PreceptorSession
@@ -102,9 +102,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 """
 
 
-class SchedulingExceptionsBrowserTests(LiveServerTestCase):
-    serve_static = False
-
+class SchedulingExceptionsBrowserTests(StaticLiveServerTestCase):
     def setUp(self):
         super().setUp()
         self.operational_today = patch(

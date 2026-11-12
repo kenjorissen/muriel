@@ -4,7 +4,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import LiveServerTestCase
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 
 from schedules.services.lead_times import ensure_lead_time_defaults
 from schedules.services.operational_attention import organization_today
@@ -180,9 +180,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 """
 
 
-class WorkRemainingSpacingBrowserTests(LiveServerTestCase):
-    serve_static = False
-
+class WorkRemainingSpacingBrowserTests(StaticLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         cls.node, cls.browser_executable = require_browser_tools()

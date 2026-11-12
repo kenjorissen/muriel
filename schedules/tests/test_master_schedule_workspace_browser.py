@@ -5,7 +5,7 @@ from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
-from django.test import LiveServerTestCase
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 
 from schedules.models import EffectiveRole, FacultyAvailabilityTemplate, PreceptorAssignment
 from schedules.services.academic_events import (
@@ -351,9 +351,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 """
 
 
-class MasterScheduleWorkspaceBrowserTests(LiveServerTestCase):
-    serve_static = False
-
+class MasterScheduleWorkspaceBrowserTests(StaticLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         cls.node, cls.browser_executable = require_browser_tools()

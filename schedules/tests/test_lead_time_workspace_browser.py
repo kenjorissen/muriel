@@ -5,7 +5,7 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import LiveServerTestCase
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 
 from schedules.services.lead_times import ensure_lead_time_defaults
 from schedules.tests.browser_tools import require_browser_tools
@@ -148,9 +148,7 @@ const { chromium } = require(process.env.PRECEPTOR_PLAYWRIGHT_MODULE);
 """
 
 
-class LeadTimeWorkspaceBrowserTests(LiveServerTestCase):
-    serve_static = False
-
+class LeadTimeWorkspaceBrowserTests(StaticLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         cls.node, cls.browser_executable = require_browser_tools()

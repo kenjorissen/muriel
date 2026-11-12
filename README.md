@@ -366,6 +366,13 @@ gets five seconds, and browser close is always awaited (including Playwright's
 owned process/profile cleanup). Python does not race that cleanup with an outer
 watchdog. The original action/scenario error is retained if cleanup also fails.
 
+Browser-test servers use Django's `StaticLiveServerTestCase`, which serves
+assets through staticfiles finders without `collectstatic` or a `STATIC_ROOT`.
+`schedules.tests.test_browser_staticfiles` verifies real HTTP CSS/JavaScript
+responses and missing-asset 404s. Individual browser scenarios may still
+intercept selected assets to isolate layout or no-JavaScript behavior; those
+fixtures do not replace the real transport regression tests.
+
 The check excludes the deterministic, representative reset-tool and multi-year
 synthetic-scenario integration cases; run them when changing those owners:
 

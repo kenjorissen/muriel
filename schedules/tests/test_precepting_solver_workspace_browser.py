@@ -7,8 +7,9 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.http import HttpResponse
-from django.test import LiveServerTestCase, override_settings
+from django.test import override_settings
 from django.urls import include, path, reverse
 from openpyxl import Workbook
 
@@ -364,10 +365,9 @@ urlpatterns = [
 ]
 
 
-class PreceptingSolverWorkspaceBrowserTests(LiveServerTestCase):
+class PreceptingSolverWorkspaceBrowserTests(StaticLiveServerTestCase):
     """Exercise the no-JavaScript solve and review forms in a real browser."""
 
-    serve_static = False
     reset_sequences = True
     week = date(2027, 2, 1)
 
