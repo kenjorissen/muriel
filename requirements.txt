@@ -4,7 +4,7 @@ whitenoise==6.12.0
 psycopg[binary]==3.3.8
 pypdf==7.0.1
 reportlab==5.1.0
-arabic-reshaper==3.0.1
-python-bidi==0.6.11
+arabic-reshaper==3.1.0
+python-bidi==0.6.12
 ortools==9.15.6755
 openpyxl==3.1.5
