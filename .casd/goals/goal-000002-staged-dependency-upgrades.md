@@ -39,7 +39,14 @@ Use the existing canonical topic contracts, `docs/production.md`, `docs/staging.
 
 The coordinator runs sequential Attempts, inspects joined evidence, accepts only passing Candidates without unresolved concerns, and verifies authorized remote runs. Runtime increments are staged in bounded groups with larger framework/server changes separately attributable; stop before proceeding past an unresolved compatibility failure. Existing operator-local staging selection is explicitly sourced in a subshell; server secrets stay on the server. An interactive sudo prompt is a human boundary, not permission to bypass it. Do not claim authenticated smoke coverage without actual evidence.
 
+## Integration evidence
+
+- Actions v7 accepted at `450576cb1e2e79e01bc5f3afbb1d4a5aac30b3a7`.
+- Ruff 0.17.4 accepted and pushed at `bd50576164ca9f9a42d4c5cbcc244598f8c8e182`; exact Candidate Check and independent Review passed. Clean-environment GitHub run https://github.com/kenjorissen/muriel/actions/runs/43135680516 was launched for this revision; its outcome is pending inspection. A successful Dependabot maintenance run is not equivalent to complete-check evidence.
+- Neither development-only increment required a staging restart; runtime staging verification remains outstanding.
+
 ## Tasks
 
 - [Task 000006: GitHub Actions v7](../tasks/task-000006-github-actions-v7.md)
 - [Task 000007: Ruff 0.17.4](../tasks/task-000007-ruff-0174.md)
+- [Task 000008: WhiteNoise 6.12.0](../tasks/task-000008-whitenoise-6120.md)
