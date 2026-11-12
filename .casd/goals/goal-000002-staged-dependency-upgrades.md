@@ -48,7 +48,7 @@ After the authorized repair, execute Task 000011 then Task 000009. Once accepted
 - Neither development-only increment required a staging restart; runtime staging verification remains outstanding.
 - WhiteNoise 6.12.0 accepted at `122d63fbdb72789c5d2b57d725e76d17bd6f1114`, from Candidate `8a1d1938d1d320e479a5ac27fe71ae493d6bace5`; authoritative Check and independent Review passed. The change adds manifest-resolved and missing-static-asset verification while preserving deployment settings. Cassidy reported implementation/Check/Review worktree cleanup. Exact-revision GitHub run https://github.com/kenjorissen/muriel/actions/runs/43136882426 passed both `checks` and `Dependency security` on `122d63fbdb72789c5d2b57d725e76d17bd6f1114`. Non-reset staging verification remains outstanding.
 
-## Resolved unlink blocker — fresh Psycopg verification pending
+## Resolved unlink blocker and accepted Psycopg upgrade
 
 Attempt `227654-1794448148361771192-0` on base `ac2c5a801fb9dfae9f14da6a3cd17f553cd52b29` registered `blocked`; no Candidate was produced or accepted. Retained evidence is `.git/cassidy/attempts/227654-1794448148361771192-0/`, particularly `stdout.jsonl` and `result.json`. This failure paused upgrades until the separately authorized Task 000011 repair was accepted; the subsequent Psycopg Attempt must still establish fresh compatibility evidence before staging.
 
@@ -64,7 +64,9 @@ Task 000011 was accepted and pushed at `2dac5a99089e1bb8257b431c64a9d08ed6409d42
 
 The worker and Reviewer flagged an existing account-before-Physician versus Physician-before-account lock-order risk. No deadlock was reported by this verification, and the approved repair explicitly excludes an application-wide lock-order redesign; retain this as a separate concern, not a claim of complete concurrency safety.
 
-Exact-revision GitHub verification passed at https://github.com/kenjorissen/muriel/actions/runs/43140261264 on `2dac5a99089e1bb8257b431c64a9d08ed6409d42`: both `checks` and `Dependency security` completed successfully, including browser tooling and complete checks. Fresh task-000009 Attempt `581211-1794449802740799954-0` was launched after acceptance and remains active at this observation. No staging deployment has yet occurred.
+Exact-revision GitHub verification passed at https://github.com/kenjorissen/muriel/actions/runs/43140261264 on `2dac5a99089e1bb8257b431c64a9d08ed6409d42`: both `checks` and `Dependency security` completed successfully, including browser tooling and complete checks. Fresh task-000009 Attempt `581211-1794449802740799954-0` subsequently passed and was accepted as described below. No staging deployment has yet occurred.
+
+Psycopg 3.3.8 was accepted and pushed at `1f52fb128aa7253b004cc9f9059c3e07232452ec`, from Candidate `bff6adc527286bfd18bacae94a66a9f15f42225a`. Exact Candidate Check and independent Review passed. On Python 3.14.4 with driver/binary 3.3.8 and libpq/PostgreSQL 18.6, migrations through `schedules.0060` and 222 selected PostgreSQL tests passed, including separate-connection lock exclusion/release and the accepted unlink repair. SQLite focused and full browser-inclusive checks passed; the two PostgreSQL-only lock tests are deliberately skipped on SQLite. Two solver fixtures now use the actual created vacation ID and a physician different from the retained Late Doc proposal, without weakened assertions. No schema, runtime configuration or scheduling semantics changed. Worker-owned database/scratch cleanup and Cassidy's implementation/Check/Review worktree removal were reported. GitHub run https://github.com/kenjorissen/muriel/actions/runs/43141697803 is pending for this exact revision. Non-reset staging verification remains the next execution boundary before Gunicorn.
 
 ## Narrow runtime discovery
 
