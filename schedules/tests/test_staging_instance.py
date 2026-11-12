@@ -162,17 +162,34 @@ import django
 
 django.setup()
 
+from django.conf import settings
+from django.contrib.staticfiles.storage import staticfiles_storage
 from django.core.management import call_command
 from django.test import Client, override_settings
 
 with override_settings(STATIC_ROOT=Path(sys.argv[1])):
     call_command("collectstatic", interactive=False, verbosity=0)
-    response = Client().get("/static/schedules/application.css")
+    client = Client(HTTP_HOST=settings.STAGING_ALLOWED_HOST)
+    manifest_url = staticfiles_storage.url("schedules/application.css")
+    responses = {}
+    for url in ("/static/schedules/application.css", manifest_url):
+        response = client.get(url, secure=True)
+        responses[url] = {
+            "status_code": response.status_code,
+            "content_type": response["Content-Type"],
+            "charset": response.charset,
+            "content": (b"".join(response.streaming_content)
+                        if response.streaming else response.content).decode(),
+        }
+        response.close()
+    missing = client.get("/static/schedules/missing.css", secure=True)
     print(json.dumps({
-        "status_code": response.status_code,
-        "content_type": response["Content-Type"],
-        "content": b"".join(response.streaming_content).decode(),
+        "debug": settings.DEBUG,
+        "manifest_url": manifest_url,
+        "responses": responses,
+        "missing_status": missing.status_code,
     }))
+    missing.close()
 """,
                     temporary_directory,
                 ],
@@ -186,10 +203,16 @@ with override_settings(STATIC_ROOT=Path(sys.argv[1])):
             )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        response = json.loads(result.stdout)
-        self.assertEqual(response["status_code"], 200)
-        self.assertEqual(response["content_type"], 'text/css; charset="utf-8"')
-        self.assertIn("--surface", response["content"])
+        result_data = json.loads(result.stdout)
+        self.assertFalse(result_data["debug"])
+        self.assertNotEqual(result_data["manifest_url"], "/static/schedules/application.css")
+        for url, response in result_data["responses"].items():
+            with self.subTest(url=url):
+                self.assertEqual(response["status_code"], 200)
+                self.assertEqual(response["content_type"].split(";", 1)[0], "text/css")
+                self.assertEqual(response["charset"], "utf-8")
+                self.assertIn("--surface", response["content"])
+        self.assertEqual(result_data["missing_status"], 404)
 
 
 class StagingBootstrapTests(SimpleTestCase):
