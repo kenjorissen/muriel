@@ -42,11 +42,19 @@ The coordinator runs sequential Attempts, inspects joined evidence, accepts only
 ## Integration evidence
 
 - Actions v7 accepted at `450576cb1e2e79e01bc5f3afbb1d4a5aac30b3a7`.
-- Ruff 0.17.4 accepted and pushed at `bd50576164ca9f9a42d4c5cbcc244598f8c8e182`; exact Candidate Check and independent Review passed. Clean-environment GitHub run https://github.com/kenjorissen/muriel/actions/runs/43135680516 was launched for this revision; its outcome is pending inspection. A successful Dependabot maintenance run is not equivalent to complete-check evidence.
+- Ruff 0.17.4 accepted and pushed at `bd50576164ca9f9a42d4c5cbcc244598f8c8e182`; exact Candidate Check and independent Review passed. Clean-environment GitHub run https://github.com/kenjorissen/muriel/actions/runs/43135680516 completed successfully on this exact revision; both `checks` and `Dependency security` passed. A successful Dependabot maintenance run is not equivalent to complete-check evidence.
 - Neither development-only increment required a staging restart; runtime staging verification remains outstanding.
+- WhiteNoise 6.12.0 accepted at `122d63fbdb72789c5d2b57d725e76d17bd6f1114`, from Candidate `8a1d1938d1d320e479a5ac27fe71ae493d6bace5`; authoritative Check and independent Review passed. The change adds manifest-resolved and missing-static-asset verification while preserving deployment settings. Cassidy reported implementation/Check/Review worktree cleanup. Exact-revision GitHub and non-reset staging checks remain outstanding for this increment.
+
+## Narrow runtime discovery
+
+Psycopg compatibility evidence can use the existing local Docker daemon and cached PostgreSQL 18 image with disposable test data, the shared Python interpreter and Django's existing test runner. This is not a production topology change or permission to use live databases; the Task specifies owned cleanup and cross-backend evidence.
+
+Before authoring the Gunicorn slice, account for its new default control socket (introduced in 25.1). The inspected 26.2.0 upstream `gunicorn/config.py` enables it by default, usually under XDG_RUNTIME_DIR or HOME, and offers `--no-control-socket`. Existing Muriel service management is systemd-owned and no new management interface has been accepted. Preserve that boundary rather than silently adopting the new default. Relevant existing owners are `scripts/start-production`, `ops/systemd/muriel*.service`, `preceptor_project/production_proxy.py`, and launcher/private-Admin tests. Actual Unix-peer and forwarding behavior needs direct runtime evidence; mocked command arguments alone are insufficient. Official release notes: https://github.com/benoitc/gunicorn/blob/26.2.0/docs/content/2026-news.md .
 
 ## Tasks
 
 - [Task 000006: GitHub Actions v7](../tasks/task-000006-github-actions-v7.md)
 - [Task 000007: Ruff 0.17.4](../tasks/task-000007-ruff-0174.md)
 - [Task 000008: WhiteNoise 6.12.0](../tasks/task-000008-whitenoise-6120.md)
+- [Task 000009: Psycopg 3.3.8](../tasks/task-000009-psycopg-338.md)
