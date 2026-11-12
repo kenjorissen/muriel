@@ -50,3 +50,4 @@ The coordinator runs sequential Attempts, inspects joined evidence, accepts only
 - [Task 000006: GitHub Actions v7](../tasks/task-000006-github-actions-v7.md)
 - [Task 000007: Ruff 0.17.4](../tasks/task-000007-ruff-0174.md)
 - [Task 000008: WhiteNoise 6.12.0](../tasks/task-000008-whitenoise-6120.md)
+- [Task 000009: Psycopg 3.3.8](../tasks/task-000009-psycopg-338.md)
