@@ -64,7 +64,7 @@ Task 000011 was accepted and pushed at `2dac5a99089e1bb8257b431c64a9d08ed6409d42
 
 The worker and Reviewer flagged an existing account-before-Physician versus Physician-before-account lock-order risk. No deadlock was reported by this verification, and the approved repair explicitly excludes an application-wide lock-order redesign; retain this as a separate concern, not a claim of complete concurrency safety.
 
-Exact-revision GitHub verification is pending at https://github.com/kenjorissen/muriel/actions/runs/43140261264 . A fresh task-000009 Attempt was launched after acceptance. No staging deployment has yet occurred.
+Exact-revision GitHub verification passed at https://github.com/kenjorissen/muriel/actions/runs/43140261264 on `2dac5a99089e1bb8257b431c64a9d08ed6409d42`: both `checks` and `Dependency security` completed successfully, including browser tooling and complete checks. Fresh task-000009 Attempt `581211-1794449802740799954-0` was launched after acceptance and remains active at this observation. No staging deployment has yet occurred.
 
 ## Narrow runtime discovery
 
