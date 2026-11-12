@@ -4,6 +4,7 @@ function observeRequests(page) {
   const pending = new Set();
   const expected = new WeakMap();
   const statuses = new WeakMap();
+  const redirecting = new WeakSet();
   const failures = [];
   let drained;
   const describe = request => `${request.method()} ${request.url()}`;
@@ -11,14 +12,27 @@ function observeRequests(page) {
     pending.delete(request);
     if (!pending.size) drained?.();
   };
-  page.on("request", request => pending.add(request));
+  page.on("request", request => {
+    pending.add(request);
+    // Transfer completion ownership, not expected outcomes, to the next hop.
+    // Playwright can emit the old hop's requestfinished before this request.
+    pending.delete(request.redirectedFrom());
+  });
   page.on("response", response => {
     statuses.set(response.request(), response.status());
+    if ([301, 302, 303, 307, 308].includes(response.status()) && response.headers().location) {
+      redirecting.add(response.request());
+    }
     if (response.status() >= 400 && expected.get(response.request())?.status !== response.status()) {
       failures.push(`${describe(response.request())}: HTTP ${response.status()}`);
     }
   });
-  page.on("requestfinished", completed);
+  page.on("requestfinished", request => {
+    // A redirect response finishes this HTTP request, not its chain. Keep it
+    // pending across the event gap until redirectedFrom() links its successor.
+    // Non-followable responses (e.g. 302 without Location) are terminal.
+    if (!redirecting.has(request)) completed(request);
+  });
   page.on("requestfailed", request => {
     const error = request.failure()?.errorText || "unknown transport error";
     const outcome = expected.get(request);
@@ -43,7 +57,8 @@ function observeRequests(page) {
         await Promise.race([
           (async () => {
             // load covers parser-discovered assets, including async scripts and
-            // images. Then await terminal events for already-started fetches.
+            // images. Then await terminal events for already-started fetches,
+            // including their redirect chains.
             // Callers must await their actions, not schedule future background work.
             await page.waitForLoadState("load", { timeout: timeoutMs });
             if (pending.size) await new Promise(resolve => { drained = resolve; });
